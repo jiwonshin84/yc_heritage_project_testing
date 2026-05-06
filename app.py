@@ -34,7 +34,7 @@ st.markdown("""
 # ==========================================================
 CSV_URL = (
     "https://raw.githubusercontent.com/"
-    "YOUR_GITHUB_ID/YOUR_REPO/main/"
+    "jiwonshin/heritage-project/main/"
     "yc_heritage_detail_enriched.csv"
 )
 
