@@ -25,6 +25,9 @@ df = pd.read_csv(
     "data/processed/yc_heritage_detail_enriched.csv"
 )
 
+# 컬럼 공백 제거
+df.columns = df.columns.str.strip()
+
 # =================================================
 # 위경도 결측 제거
 # =================================================
@@ -117,7 +120,7 @@ def simplify_era(text):
         return "조선후기"
 
     # ---------------------------------------------
-    # 조선시대 초기/후기 직접 표기
+    # 조선 직접 표기
     # ---------------------------------------------
 
     elif (
@@ -131,10 +134,6 @@ def simplify_era(text):
         "조선 후기" in text
     ):
         return "조선후기"
-
-    # ---------------------------------------------
-    # 조선 일반
-    # ---------------------------------------------
 
     elif "조선" in text:
         return "조선"
@@ -150,11 +149,16 @@ def simplify_era(text):
     # 연도 기반 추정
     # ---------------------------------------------
 
-    year_match = re.search(r"\d{4}", text)
+    year_match = re.search(
+        r"\d{4}",
+        text
+    )
 
     if year_match:
 
-        year = int(year_match.group())
+        year = int(
+            year_match.group()
+        )
 
         if year < 700:
             return "신라"
@@ -168,10 +172,6 @@ def simplify_era(text):
         elif year < 1910:
             return "조선후기"
 
-    # ---------------------------------------------
-    # 기타
-    # ---------------------------------------------
-
     return "기타"
 
 # =================================================
@@ -183,20 +183,18 @@ df["시대그룹"] = df["시대"].apply(
 )
 
 # =================================================
-# 결측값 처리
+# 국가유산종목 결측 처리
 # =================================================
 
-for col in [
-    "국가유산종목",
-    "재질",
-    "노출형태"
-]:
+if "국가유산종목" not in df.columns:
 
-    df[col] = (
-        df[col]
-        .fillna("미상")
-        .astype(str)
-    )
+    df["국가유산종목"] = "미상"
+
+df["국가유산종목"] = (
+    df["국가유산종목"]
+    .fillna("미상")
+    .astype(str)
+)
 
 # =================================================
 # 사이드바 필터
@@ -205,13 +203,15 @@ for col in [
 st.sidebar.header("🔎 문화재 필터")
 
 # -------------------------------------------------
-# 시대
+# 시대 필터
 # -------------------------------------------------
 
 era_options = [
     "전체"
 ] + sorted(
-    df["시대그룹"].unique().tolist()
+    df["시대그룹"]
+    .unique()
+    .tolist()
 )
 
 selected_era = st.sidebar.selectbox(
@@ -220,7 +220,7 @@ selected_era = st.sidebar.selectbox(
 )
 
 # -------------------------------------------------
-# 국가유산종목
+# 국가유산종목 필터
 # -------------------------------------------------
 
 type_options = [
@@ -236,40 +236,6 @@ selected_type = st.sidebar.selectbox(
     type_options
 )
 
-# -------------------------------------------------
-# 재질
-# -------------------------------------------------
-
-material_options = [
-    "전체"
-] + sorted(
-    df["재질"]
-    .unique()
-    .tolist()
-)
-
-selected_material = st.sidebar.selectbox(
-    "재질",
-    material_options
-)
-
-# -------------------------------------------------
-# 노출형태
-# -------------------------------------------------
-
-exposure_options = [
-    "전체"
-] + sorted(
-    df["노출형태"]
-    .unique()
-    .tolist()
-)
-
-selected_exposure = st.sidebar.selectbox(
-    "노출형태",
-    exposure_options
-)
-
 # =================================================
 # 필터 적용
 # =================================================
@@ -279,25 +245,15 @@ filtered_df = df.copy()
 if selected_era != "전체":
 
     filtered_df = filtered_df[
-        filtered_df["시대그룹"] == selected_era
+        filtered_df["시대그룹"]
+        == selected_era
     ]
 
 if selected_type != "전체":
 
     filtered_df = filtered_df[
-        filtered_df["국가유산종목"] == selected_type
-    ]
-
-if selected_material != "전체":
-
-    filtered_df = filtered_df[
-        filtered_df["재질"] == selected_material
-    ]
-
-if selected_exposure != "전체":
-
-    filtered_df = filtered_df[
-        filtered_df["노출형태"] == selected_exposure
+        filtered_df["국가유산종목"]
+        == selected_type
     ]
 
 # =================================================
@@ -358,7 +314,7 @@ for idx, row in filtered_df.iterrows():
     )
 
     # -------------------------------------------------
-    # 이미지 html
+    # 이미지 HTML
     # -------------------------------------------------
 
     if (
@@ -449,16 +405,6 @@ for idx, row in filtered_df.iterrows():
             <tr>
                 <td><b>종목</b></td>
                 <td>{row.get("국가유산종목", "-")}</td>
-            </tr>
-
-            <tr>
-                <td><b>재질</b></td>
-                <td>{row.get("재질", "-")}</td>
-            </tr>
-
-            <tr>
-                <td><b>노출형태</b></td>
-                <td>{row.get("노출형태", "-")}</td>
             </tr>
 
         </table>
