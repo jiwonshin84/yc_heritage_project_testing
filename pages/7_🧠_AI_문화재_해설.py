@@ -13,9 +13,11 @@ st.set_page_config(
 # =====================================================
 # Gemini API 설정
 # =====================================================
-GEMINI_API_KEY = "여기에_API_KEY_입력"
+GEMINI_API_KEY = "AIzaSyCeNS_TTBIU6LmchWVdpki-Z9k0-MbKL6E"
 
-genai.configure(api_key=GEMINI_API_KEY)
+genai.configure(
+    api_key=GEMINI_API_KEY
+)
 
 model = genai.GenerativeModel(
     "gemini-1.5-flash"
@@ -208,9 +210,13 @@ try:
         for key, value in info_data.items():
 
             c1, c2 = st.columns(
-                [1, 2.5]
+                [1, 3],
+                vertical_alignment="top"
             )
 
+            # -----------------------------------------
+            # 왼쪽 제목
+            # -----------------------------------------
             with c1:
 
                 st.markdown(
@@ -219,7 +225,9 @@ try:
                         font-weight:700;
                         color:#2c3e50;
                         font-size:16px;
-                        padding-top:5px;
+                        line-height:1.8;
+                        padding-top:0px;
+                        margin-top:0px;
                     '>
                     {key}
                     </div>
@@ -227,6 +235,9 @@ try:
                     unsafe_allow_html=True
                 )
 
+            # -----------------------------------------
+            # 오른쪽 내용
+            # -----------------------------------------
             with c2:
 
                 st.markdown(
@@ -243,6 +254,9 @@ try:
                     unsafe_allow_html=True
                 )
 
+            # -----------------------------------------
+            # 구분선
+            # -----------------------------------------
             st.markdown(
                 """
                 <hr style='
