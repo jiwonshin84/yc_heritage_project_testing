@@ -253,6 +253,7 @@ st.markdown("""
 
 st.divider()
 
+
 # ============================================
 # 상단 환경 대시보드
 # ============================================
@@ -260,7 +261,7 @@ st.divider()
 st.subheader("🌿 영천 문화재 보존 환경 현황")
 
 # 메인 영역
-left, center, right = st.columns([1.5, 2.2, 1.1])
+left, center, right = st.columns([1.4, 2.0, 1.0])
 
 # ============================================
 # 공통 스타일
@@ -268,37 +269,39 @@ left, center, right = st.columns([1.5, 2.2, 1.1])
 
 card_style = """
 background-color:#f8f9fa;
-padding:24px;
+padding:22px;
 border-radius:20px;
 border:1px solid #e5e7eb;
-box-shadow:0 4px 12px rgba(0,0,0,0.06);
-height:520px;
+box-shadow:0 4px 12px rgba(0,0,0,0.05);
+height:420px;
 """
 
 title_style = """
-font-size:28px;
+font-size:24px;
 font-weight:700;
-margin-bottom:18px;
+margin-bottom:14px;
 color:#1f2937;
 """
 
 label_style = """
-font-size:15px;
+font-size:14px;
 color:#6b7280;
-margin-bottom:6px;
+margin-bottom:4px;
 """
 
 value_style = """
-font-size:26px;
+font-size:22px;
 font-weight:700;
 color:#111827;
-margin-bottom:20px;
+margin-bottom:18px;
 """
 
 time_style = """
 font-size:13px;
 color:#9ca3af;
-margin-top:16px;
+margin-top:12px;
+position:absolute;
+bottom:20px;
 """
 
 # ============================================
@@ -309,7 +312,7 @@ with left:
 
     st.markdown(
         f"""
-<div style="{card_style}">
+<div style="{card_style}; position:relative;">
 
 <div style="{title_style}">
 🌦 기상 환경
@@ -320,7 +323,7 @@ with left:
 <div style="
 display:grid;
 grid-template-columns:1fr 1fr;
-gap:20px;
+gap:16px;
 margin-top:20px;
 ">
 
@@ -363,7 +366,7 @@ with center:
 
     st.markdown(
         f"""
-<div style="{card_style}">
+<div style="{card_style}; position:relative;">
 
 <div style="{title_style}">
 🌫 대기오염 현황
@@ -374,7 +377,7 @@ with center:
 <div style="
 display:grid;
 grid-template-columns:1fr 1fr 1fr;
-gap:24px;
+gap:20px;
 margin-top:20px;
 ">
 
@@ -427,7 +430,7 @@ with right:
 
     st.markdown(
         f"""
-<div style="{card_style}">
+<div style="{card_style}; position:relative;">
 
 <div style="{title_style}">
 🏛 문화재 현황
