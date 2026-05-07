@@ -47,6 +47,31 @@ df = pd.read_csv(
 df.columns = df.columns.str.strip()
 
 # =================================================
+# 문화유산 중요도 점수
+# =================================================
+
+importance_map = {
+
+    "국보": 5,
+    "보물": 4,
+    "사적": 4,
+    "명승": 3,
+    "천연기념물": 3,
+    "국가민속문화유산": 3,
+    "국가등록문화유산": 2,
+    "시도유형문화유산": 2,
+    "시도기념물": 2,
+    "문화유산자료": 1
+
+}
+
+df["중요도점수"] = (
+    df["국가유산종목"]
+    .map(importance_map)
+    .fillna(1)
+)
+
+# =================================================
 # 주요 지표
 # =================================================
 
@@ -83,7 +108,7 @@ with c4:
 st.markdown("<br>", unsafe_allow_html=True)
 
 # =================================================
-# 레이아웃
+# 1행
 # =================================================
 
 left, right = st.columns([1.2, 1])
@@ -181,9 +206,7 @@ with right:
         "개수"
     ]
 
-    # -------------------------------------------------
     # Bubble 위치 자동 생성
-    # -------------------------------------------------
 
     n = len(type_count)
 
@@ -198,10 +221,6 @@ with right:
         -(i // cols)
         for i in range(n)
     ]
-
-    # -------------------------------------------------
-    # Bubble Chart
-    # -------------------------------------------------
 
     fig2 = px.scatter(
 
@@ -268,12 +287,147 @@ with right:
     )
 
 # =================================================
+# 2행
+# =================================================
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+left2, right2 = st.columns([1, 1])
+
+# =================================================
+# 3. 문화유산 중요도 시각화
+# =================================================
+
+with left2:
+
+    st.markdown("""
+    <h3 style="
+    font-size:24px;
+    margin-bottom:10px;
+    ">
+    ⭐ 문화유산 종목 중요도
+    </h3>
+    """, unsafe_allow_html=True)
+
+    importance_df = (
+
+        df.groupby("국가유산종목")["중요도점수"]
+        .mean()
+        .reset_index()
+
+    )
+
+    importance_df = (
+        importance_df
+        .sort_values(
+            by="중요도점수",
+            ascending=False
+        )
+    )
+
+    fig3 = px.bar(
+
+        importance_df,
+
+        x="중요도점수",
+        y="국가유산종목",
+
+        orientation="h",
+
+        color="중요도점수",
+
+        color_continuous_scale="Sunset",
+
+        text="중요도점수"
+
+    )
+
+    fig3.update_layout(
+
+        height=500,
+
+        margin=dict(
+            t=20,
+            l=10,
+            r=10,
+            b=10
+        ),
+
+        xaxis_title="중요도 점수",
+
+        yaxis_title=""
+
+    )
+
+    fig3.update_traces(
+
+        textposition="outside"
+
+    )
+
+    st.plotly_chart(
+        fig3,
+        use_container_width=True
+    )
+
+# =================================================
+# 4. Sunburst Chart
+# =================================================
+
+with right2:
+
+    st.markdown("""
+    <h3 style="
+    font-size:24px;
+    margin-bottom:10px;
+    ">
+    🌞 문화유산 분류 구조
+    </h3>
+    """, unsafe_allow_html=True)
+
+    sunburst_df = df.copy()
+
+    fig4 = px.sunburst(
+
+        sunburst_df,
+
+        path=[
+            "국가유산종목",
+            "국가유산분류"
+        ]
+
+    )
+
+    fig4.update_layout(
+
+        height=500,
+
+        margin=dict(
+            t=20,
+            l=10,
+            r=10,
+            b=10
+        )
+
+    )
+
+    st.plotly_chart(
+        fig4,
+        use_container_width=True
+    )
+
+# =================================================
 # 하단 설명
 # =================================================
 
 st.markdown("<br>", unsafe_allow_html=True)
 
 st.info("""
-📌 Treemap은 지역별 문화유산 규모를 면적으로 표현하며,  
-Bubble Chart는 국가유산 종목별 분포를 직관적으로 보여줍니다.
+📌 Treemap은 지역별 문화유산 규모를 면적으로 표현합니다.  
+
+📌 Bubble Chart는 국가유산 종목별 규모를 직관적으로 보여줍니다.  
+
+📌 중요도 시각화는 문화유산 종목의 상대적 가치를 표현합니다.  
+
+📌 Sunburst Chart는 문화유산 분류 체계를 계층적으로 보여줍니다.
 """)
