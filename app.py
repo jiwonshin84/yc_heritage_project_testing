@@ -16,8 +16,11 @@ SERVICE_KEY = "feb2bfabd299d5d05e89c7aec49ba7e706112603e76549a92e868bd86ec60323"
 # 영천 관측소
 STN_ID = "281"
 
-# 현재시간보다 1시간 이전 사용 - 기상청 ASOS 실황은 보통 정시 기준
-base_time = datetime.now() - timedelta(hours=1)
+# UTC → 한국시간 변환
+now = datetime.utcnow() + timedelta(hours=9)
+
+# 1시간 이전 데이터 사용 - 기상청 ASOS 실황은 보통 정시 기준
+base_time = now - timedelta(hours=1)
 
 tm = base_time.strftime("%Y%m%d%H00")
 
@@ -67,7 +70,7 @@ except Exception as e:
     temp = "-"
     humidity = "-"
 
-
+st.write("현재 한국시간:", now)
 st.write("요청 시간:", tm)
 st.write("기온:", temp)
 st.write("습도:", humidity)
