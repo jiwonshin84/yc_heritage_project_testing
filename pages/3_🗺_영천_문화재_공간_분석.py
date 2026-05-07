@@ -46,13 +46,17 @@ if selected_era != "전체":
     df = df[df["시대"] == selected_era]
 
 # =================================================
-# 지도 생성
+# 지도 중심
 # =================================================
 
 center = [
     df["위도"].mean(),
     df["경도"].mean()
 ]
+
+# =================================================
+# 지도 생성
+# =================================================
 
 m = folium.Map(
     location=center,
@@ -61,7 +65,7 @@ m = folium.Map(
 )
 
 # =================================================
-# 클러스터
+# 마커 클러스터
 # =================================================
 
 marker_cluster = MarkerCluster().add_to(m)
@@ -72,45 +76,113 @@ marker_cluster = MarkerCluster().add_to(m)
 
 for idx, row in df.iterrows():
 
-    image_url = str(
-        row.get("이미지URL", "")
-    ).strip()
-
     heritage_name = row.get(
         "문화재명(국문)",
         "문화재"
     )
 
-    popup_html = f"""
-    <div style="
-        width:260px;
-        padding:10px;
-    ">
+    image_url = str(
+        row.get("이미지URL", "")
+    ).strip()
 
-        <h4 style="
+    # http → https 변환
+    image_url = image_url.replace(
+        "http://",
+        "https://"
+    )
+
+    # =================================================
+    # 이미지 HTML
+    # =================================================
+
+    if (
+        image_url == ""
+        or image_url.lower() == "nan"
+    ):
+
+        image_html = """
+        <div style="
+            width:240px;
+            height:160px;
+            background:#f2f2f2;
+            border-radius:12px;
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            color:#777;
+            font-size:14px;
             margin-bottom:10px;
-            color:#222;
         ">
-            {heritage_name}
-        </h4>
+            등록된 이미지 없음
+        </div>
+        """
 
+    else:
+
+        image_html = f"""
         <a href="{image_url}" target="_blank">
 
             <img
                 src="{image_url}"
-                width="240"
+
                 style="
+                    width:240px;
+                    height:160px;
+                    object-fit:cover;
                     border-radius:12px;
                     margin-bottom:10px;
+                    cursor:pointer;
                     box-shadow:0 2px 8px rgba(0,0,0,0.2);
+                "
+
+                onerror="
+                    this.style.display='none';
+                    this.parentNode.innerHTML=
+                    '<div style=
+                    \\'width:240px;
+                    height:160px;
+                    background:#f2f2f2;
+                    border-radius:12px;
+                    display:flex;
+                    justify-content:center;
+                    align-items:center;
+                    color:#777;
+                    font-size:14px;
+                    \\'>
+
+                    이미지 로드 실패
+
+                    </div>';
                 "
             >
 
         </a>
+        """
+
+    # =================================================
+    # Popup HTML
+    # =================================================
+
+    popup_html = f"""
+    <div style="
+        width:260px;
+        padding:10px;
+        font-family:sans-serif;
+    ">
+
+        <h3 style="
+            margin-bottom:10px;
+            color:#222;
+        ">
+            {heritage_name}
+        </h3>
+
+        {image_html}
 
         <table style="
             width:100%;
             font-size:14px;
+            line-height:1.8;
         ">
 
             <tr>
@@ -139,14 +211,32 @@ for idx, row in df.iterrows():
 
         <div style="
             font-size:13px;
-            color:#555;
-            line-height:1.5;
+            color:#666;
         ">
-            이미지를 클릭하면 크게 볼 수 있습니다.
+            이미지를 클릭하면 새 창에서 크게 볼 수 있습니다.
         </div>
 
     </div>
     """
+
+    # =================================================
+    # IFrame Popup
+    # =================================================
+
+    iframe = folium.IFrame(
+        html=popup_html,
+        width=290,
+        height=360
+    )
+
+    popup = folium.Popup(
+        iframe,
+        max_width=320
+    )
+
+    # =================================================
+    # Marker 추가
+    # =================================================
 
     folium.Marker(
         location=[
@@ -154,10 +244,7 @@ for idx, row in df.iterrows():
             row["경도"]
         ],
 
-        popup=folium.Popup(
-            popup_html,
-            max_width=300
-        ),
+        popup=popup,
 
         tooltip=heritage_name,
 
@@ -186,54 +273,8 @@ HeatMap(
 # 지도 출력
 # =================================================
 
-st_data = st_folium(
+st_folium(
     m,
     width=1400,
     height=750
 )
-
-# =================================================
-# 하단 카드형 목록 UI
-# =================================================
-
-st.markdown("---")
-st.subheader("🏛 문화재 상세 카드")
-
-cols = st.columns(3)
-
-for idx, row in df.head(9).iterrows():
-
-    with cols[idx % 3]:
-
-        st.markdown(f"""
-        <div style="
-            border-radius:18px;
-            padding:15px;
-            box-shadow:0 2px 12px rgba(0,0,0,0.1);
-            margin-bottom:20px;
-            background:white;
-        ">
-        """, unsafe_allow_html=True)
-
-        st.image(
-            row["이미지URL"],
-            use_container_width=True
-        )
-
-        st.markdown(f"""
-        ### {row["문화재명(국문)"]}
-        """)
-        
-        st.markdown(f"""
-        - **시대** : {row.get("시대", "-")}
-        - **종목** : {row.get("국가유산종목", "-")}
-        - **재질** : {row.get("재질", "-")}
-        """)
-
-        with st.expander("📖 상세 설명"):
-
-            st.write(
-                row.get("내용", "설명 없음")
-            )
-
-        st.markdown("</div>", unsafe_allow_html=True)
