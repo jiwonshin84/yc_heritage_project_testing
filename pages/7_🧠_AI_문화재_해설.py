@@ -13,15 +13,11 @@ st.set_page_config(
 # =====================================================
 # Gemini API 설정
 # =====================================================
-GEMINI_API_KEY = "AIzaSyAUJzBLV6EDCWTROatmV9ohhzBWlVANWNw"
+GEMINI_API_KEY = "여기에_본인_API_KEY"
 
-genai.configure(
-    api_key=GEMINI_API_KEY
-)
+genai.configure(api_key=GEMINI_API_KEY)
 
-model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash"
-)
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 # =====================================================
 # 메인 제목
@@ -74,11 +70,7 @@ try:
 
         category = st.selectbox(
             "📂 문화재 품목 선택",
-            sorted(
-                df[category_col]
-                .dropna()
-                .unique()
-            )
+            sorted(df[category_col].dropna().unique())
         )
 
     filtered_df = df[
@@ -109,15 +101,9 @@ try:
     # -------------------------------------------------
     with left_col:
 
-        image_url = row.get(
-            "이미지URL",
-            None
-        )
+        image_url = row.get("이미지URL", None)
 
-        if (
-            pd.notna(image_url)
-            and str(image_url).strip() != ""
-        ):
+        if pd.notna(image_url) and str(image_url).strip() != "":
 
             st.image(
                 image_url,
@@ -125,8 +111,7 @@ try:
             )
 
             st.caption(
-                "출처: 국가유산청 - "
-                + heritage
+                "출처: 국가유산청 - " + heritage
             )
 
         else:
@@ -154,68 +139,39 @@ try:
             unsafe_allow_html=True
         )
 
-        # ---------------------------------------------
-        # 상세 정보 데이터
-        # ---------------------------------------------
         info_data = {
 
             "종목":
-                clean(
-                    row.get(category_col)
-                ),
+                clean(row.get(category_col)),
 
             "분류":
-                clean(
-                    row.get("국가유산분류")
-                )
+                clean(row.get("국가유산분류"))
                 + " ("
-                + clean(
-                    row.get("국가유산분류2")
-                )
+                + clean(row.get("국가유산분류2"))
                 + ")",
 
             "한자명":
-                clean(
-                    row.get("문화재명(한자)")
-                ),
+                clean(row.get("문화재명(한자)")),
 
             "시대":
-                clean(
-                    row.get("시대")
-                ),
+                clean(row.get("시대")),
 
             "소재지":
-                clean(
-                    row.get("소재지상세")
-                ),
+                clean(row.get("소재지상세")),
 
             "소유자/관리자":
-                clean(
-                    row.get("소유자")
-                )
+                clean(row.get("소유자"))
                 + " / "
-                + clean(
-                    row.get("관리자")
-                ),
-
-            "상세 설명":
-                clean(
-                    row.get("내용")
-                )
+                + clean(row.get("관리자"))
         }
 
         # ---------------------------------------------
-        # 상세 정보 출력
+        # 상세정보 출력
         # ---------------------------------------------
         for key, value in info_data.items():
 
-            c1, c2 = st.columns(
-                [1, 3]
-            )
+            c1, c2 = st.columns([1, 2.2])
 
-            # -----------------------------------------
-            # 왼쪽 제목
-            # -----------------------------------------
             with c1:
 
                 st.markdown(
@@ -224,8 +180,7 @@ try:
                         font-weight:700;
                         color:#2c3e50;
                         font-size:16px;
-                        line-height:1.8;
-                        padding-top:18px;
+                        padding-top:5px;
                     '>
                     {key}
                     </div>
@@ -233,9 +188,6 @@ try:
                     unsafe_allow_html=True
                 )
 
-            # -----------------------------------------
-            # 오른쪽 내용
-            # -----------------------------------------
             with c2:
 
                 st.markdown(
@@ -243,9 +195,7 @@ try:
                     <div style='
                         color:#444;
                         font-size:15px;
-                        line-height:1.8;
-                        padding-top:18px;
-                        white-space:pre-line;
+                        line-height:1.6;
                     '>
                     {value}
                     </div>
@@ -253,9 +203,6 @@ try:
                     unsafe_allow_html=True
                 )
 
-            # -----------------------------------------
-            # 구분선
-            # -----------------------------------------
             st.markdown(
                 """
                 <hr style='
@@ -266,80 +213,43 @@ try:
                 unsafe_allow_html=True
             )
 
+        # =================================================
+        # 상세 설명
+        # =================================================
+        st.markdown("### 📖 상세 설명")
+
+        content = clean(row.get("내용"))
+
+        st.write(content)
+
     # =================================================
-    # AI 도슨트 가이드
+    # AI 스마트 해설
     # =================================================
-    st.markdown("---")
+    st.markdown("<br>", unsafe_allow_html=True)
 
     시대 = clean(row.get("시대"))
     소재지 = clean(row.get("소재지상세"))
     종목 = clean(row.get(category_col))
-    분류 = clean(row.get("국가유산분류"))
-    내용 = clean(row.get("내용"))
 
-    with st.spinner(
-        "AI 도슨트 해설 생성 중..."
-    ):
+    st.success(f"""
+### 🤖 AI 도슨트 가이드
 
-        guide_prompt = f"""
-        너는 전문 박물관 도슨트이다.
+**{heritage}**은(는)
+**{시대}** 시대의 숨결을 간직한 소중한 유산입니다.
 
-        아래 문화재 정보를 바탕으로
-        학생들과 일반인이 흥미롭게
-        이해할 수 있도록 설명해라.
+현재 **{소재지}**에 보존되어 있으며,
+**{종목}**으로서 학술적 가치가 매우 높습니다.
 
-        [문화재 정보]
-
-        이름:
-        {heritage}
-
-        종목:
-        {종목}
-
-        분류:
-        {분류}
-
-        시대:
-        {시대}
-
-        소재지:
-        {소재지}
-
-        설명:
-        {내용}
-
-        아래 내용을 포함해라.
-
-        1. 문화재 소개
-        2. 역사적 의미
-        3. 특징
-        4. 영천 지역과의 관련성
-        5. 흥미로운 이야기
-
-        너무 딱딱하지 않게
-        실제 전시관 해설처럼 설명해라.
-        """
-
-        guide_response = model.generate_content(
-            guide_prompt
-        )
-
-    st.markdown(
-        "## 🤖 AI 도슨트 가이드"
-    )
-
-    st.write(
-        guide_response.text
-    )
+특히 이 유산은
+영천 지역의 역사적 정체성을 잘 보여주는 중요한 지표가 됩니다.
+""")
 
     # =================================================
-    # Gemini 질문 기능
+    # Gemini AI 질문하기
     # =================================================
     st.markdown("---")
 
-    st.subheader(
-        "💬 AI에게 문화재 질문하기"
-    )
+    st.subheader("💬 AI에게 문화재 질문하기")
 
     user_question = st.text_input(
         "문화재에 대해 궁금한 점을 입력하세요"
@@ -349,21 +259,20 @@ try:
 
         if user_question.strip() == "":
 
-            st.warning(
-                "질문을 입력해주세요."
-            )
+            st.warning("질문을 입력해주세요.")
 
         else:
 
-            with st.spinner(
-                "AI가 답변 생성 중입니다..."
-            ):
+            with st.spinner("AI가 답변 생성 중입니다..."):
 
                 prompt = f"""
-                너는 한국 문화재 전문 AI이다.
+                너는 한국 문화재 전문 도슨트 AI이다.
 
                 문화재 이름:
                 {heritage}
+
+                문화재 설명:
+                {content}
 
                 시대:
                 {시대}
@@ -371,27 +280,17 @@ try:
                 소재지:
                 {소재지}
 
-                문화재 설명:
-                {내용}
-
                 사용자 질문:
                 {user_question}
 
-                쉽고 친절하게
-                답변해라.
+                친절하고 이해하기 쉽게 답변해줘.
                 """
 
-                response = model.generate_content(
-                    prompt
-                )
+                response = model.generate_content(prompt)
 
-                st.markdown(
-                    "### 🤖 AI 답변"
-                )
+                st.markdown("### 🤖 AI 답변")
 
-                st.write(
-                    response.text
-                )
+                st.write(response.text)
 
 # =====================================================
 # 오류 처리
@@ -399,6 +298,6 @@ try:
 except Exception as e:
 
     st.error(
-        "데이터 처리 중 오류 발생\n\n"
+        "데이터를 불러오거나 처리하는 중 오류가 발생했습니다.\n\n"
         + str(e)
     )
