@@ -173,6 +173,20 @@ df["국가유산종목"] = (
 )
 
 # =================================================
+# 주소 컬럼 처리
+# =================================================
+
+if "소재지상세" not in df.columns:
+
+    df["소재지상세"] = "-"
+
+df["소재지상세"] = (
+    df["소재지상세"]
+    .fillna("-")
+    .astype(str)
+)
+
+# =================================================
 # 사이드바 필터
 # =================================================
 
@@ -250,13 +264,11 @@ if selected_type != "전체":
     ]
 
 # =================================================
-# 검색 결과 표시
+# 검색 결과 표시 (위쪽으로 이동)
 # =================================================
 
-st.sidebar.markdown("---")
-
-st.sidebar.success(
-    f"검색된 문화재: {len(filtered_df)}개"
+st.sidebar.info(
+    f"🏛 검색된 문화재: {len(filtered_df)}개"
 )
 
 # =================================================
@@ -272,20 +284,23 @@ if len(filtered_df) == 0:
     st.stop()
 
 # =================================================
-# 세션 상태
+# 선택 문화재 상태
 # =================================================
 
-if "selected_lat" not in st.session_state:
+if "selected_heritage" not in st.session_state:
 
-    st.session_state.selected_lat = (
-        filtered_df.iloc[0]["위도"]
+    st.session_state.selected_heritage = (
+        filtered_df.iloc[0]["문화재명(국문)"]
     )
 
-if "selected_lon" not in st.session_state:
+# =================================================
+# 선택 문화재 데이터
+# =================================================
 
-    st.session_state.selected_lon = (
-        filtered_df.iloc[0]["경도"]
-    )
+selected_row = filtered_df[
+    filtered_df["문화재명(국문)"]
+    == st.session_state.selected_heritage
+].iloc[0]
 
 # =================================================
 # 레이아웃
@@ -296,14 +311,14 @@ map_col, list_col = st.columns(
 )
 
 # =================================================
-# 지도
+# 지도 영역
 # =================================================
 
 with map_col:
 
     center = [
-        st.session_state.selected_lat,
-        st.session_state.selected_lon
+        selected_row["위도"],
+        selected_row["경도"]
     ]
 
     # -------------------------------------------------
@@ -432,17 +447,12 @@ with map_col:
                     <td>{row.get("국가유산종목", "-")}</td>
                 </tr>
 
+                <tr>
+                    <td><b>주소</b></td>
+                    <td>{row.get("소재지상세", "-")}</td>
+                </tr>
+
             </table>
-
-            <br>
-
-            <div style="
-                font-size:13px;
-                color:#666;
-                white-space:nowrap;
-            ">
-                이미지를 클릭하면 새 창에서 크게 볼 수 있습니다.
-            </div>
 
         </div>
         """
@@ -454,13 +464,26 @@ with map_col:
         iframe = folium.IFrame(
             html=popup_html,
             width=380,
-            height=500
+            height=520
         )
 
         popup = folium.Popup(
             iframe,
             max_width=420
         )
+
+        # ---------------------------------------------
+        # 선택 마커 색상
+        # ---------------------------------------------
+
+        marker_color = "blue"
+
+        if (
+            heritage_name
+            == st.session_state.selected_heritage
+        ):
+
+            marker_color = "red"
 
         # ---------------------------------------------
         # marker
@@ -477,7 +500,7 @@ with map_col:
             tooltip=heritage_name,
 
             icon=folium.Icon(
-                color="red",
+                color=marker_color,
                 icon="info-sign"
             )
 
@@ -517,6 +540,8 @@ with list_col:
         "## 🏛 문화재 목록"
     )
 
+    st.markdown("---")
+
     for idx, row in filtered_df.iterrows():
 
         heritage_name = row.get(
@@ -524,18 +549,61 @@ with list_col:
             "문화재"
         )
 
+        address = row.get(
+            "소재지상세",
+            "-"
+        )
+
+        selected = (
+            heritage_name
+            == st.session_state.selected_heritage
+        )
+
+        # ---------------------------------------------
+        # 선택 시 스타일 변경
+        # ---------------------------------------------
+
+        bg_color = "#ffe4e1" if selected else "#f8f9fa"
+        border = "2px solid #ff4b4b" if selected else "1px solid #ddd"
+
         if st.button(
             heritage_name,
             key=f"heritage_{idx}",
             use_container_width=True
         ):
 
-            st.session_state.selected_lat = (
-                row["위도"]
-            )
-
-            st.session_state.selected_lon = (
-                row["경도"]
-            )
+            st.session_state.selected_heritage = heritage_name
 
             st.rerun()
+
+        st.markdown(
+            f'''
+            <div style="
+                background:{bg_color};
+                border:{border};
+                border-radius:10px;
+                padding:10px;
+                margin-bottom:15px;
+                text-align:left;
+            ">
+
+                <div style="
+                    font-weight:bold;
+                    font-size:15px;
+                    margin-bottom:6px;
+                ">
+                    {heritage_name}
+                </div>
+
+                <div style="
+                    font-size:13px;
+                    color:#666;
+                    line-height:1.5;
+                ">
+                    📍 {address}
+                </div>
+
+            </div>
+            ''',
+            unsafe_allow_html=True
+        )
