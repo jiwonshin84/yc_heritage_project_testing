@@ -262,7 +262,10 @@ st.subheader("🌿 영천 문화재 보존 환경 현황")
 # 메인 영역
 left, center, right = st.columns([1.5, 2.2, 1.1])
 
-# 공통 카드 스타일
+# ============================================
+# 공통 스타일
+# ============================================
+
 card_style = """
 background-color:#f8f9fa;
 padding:24px;
@@ -282,20 +285,20 @@ color:#1f2937;
 label_style = """
 font-size:15px;
 color:#6b7280;
-margin-bottom:4px;
+margin-bottom:6px;
 """
 
 value_style = """
-font-size:28px;
+font-size:26px;
 font-weight:700;
 color:#111827;
-margin-bottom:18px;
+margin-bottom:20px;
 """
 
 time_style = """
 font-size:13px;
 color:#9ca3af;
-margin-top:10px;
+margin-top:16px;
 """
 
 # ============================================
@@ -314,17 +317,34 @@ with left:
 
 <hr>
 
+<div style="
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:20px;
+margin-top:20px;
+">
+
+<div>
 <div style="{label_style}">🌡 기온</div>
 <div style="{value_style}">{temp} °C</div>
+</div>
 
+<div>
 <div style="{label_style}">💧 습도</div>
 <div style="{value_style}">{humidity} %</div>
+</div>
 
+<div>
 <div style="{label_style}">🌧 강수량</div>
 <div style="{value_style}">{rainfall} mm</div>
+</div>
 
+<div>
 <div style="{label_style}">💨 풍속</div>
 <div style="{value_style}">{wind_speed} m/s</div>
+</div>
+
+</div>
 
 <div style="{time_style}">
 ⏱ 측정 시각 : {tm}
@@ -355,6 +375,7 @@ with center:
 display:grid;
 grid-template-columns:1fr 1fr 1fr;
 gap:24px;
+margin-top:20px;
 ">
 
 <div>
@@ -414,6 +435,8 @@ with right:
 
 <hr>
 
+<div style="margin-top:20px;">
+
 <div style="{label_style}">
 분석 문화재 수
 </div>
@@ -430,6 +453,8 @@ with right:
 
 <div style="{value_style}">
 18개
+</div>
+
 </div>
 
 </div>
