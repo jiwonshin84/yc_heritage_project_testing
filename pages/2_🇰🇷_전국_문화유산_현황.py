@@ -181,18 +181,27 @@ with right:
         "개수"
     ]
 
-    # 위치용 숫자 생성
+    # -------------------------------------------------
+    # Bubble 위치 자동 생성
+    # -------------------------------------------------
+
+    n = len(type_count)
+
+    cols = 4
+
     type_count["x"] = [
-        1, 2, 3, 4, 5,
-        1.5, 2.5, 3.5, 4.5,
-        2, 3, 4
-    ][:len(type_count)]
+        i % cols
+        for i in range(n)
+    ]
 
     type_count["y"] = [
-        1, 1, 1, 1, 1,
-        2, 2, 2, 2,
-        3, 3, 3
-    ][:len(type_count)]
+        -(i // cols)
+        for i in range(n)
+    ]
+
+    # -------------------------------------------------
+    # Bubble Chart
+    # -------------------------------------------------
 
     fig2 = px.scatter(
 
@@ -207,7 +216,7 @@ with right:
 
         text="국가유산종목",
 
-        size_max=120,
+        size_max=100,
 
         color_continuous_scale="Blues"
 
@@ -228,6 +237,7 @@ with right:
         hovertemplate=
         "<b>%{text}</b><br>" +
         "문화유산 수: %{marker.size}개"
+
     )
 
     fig2.update_layout(
