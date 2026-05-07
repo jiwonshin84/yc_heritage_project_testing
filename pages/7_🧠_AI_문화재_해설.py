@@ -20,7 +20,7 @@ genai.configure(
 )
 
 model = genai.GenerativeModel(
-    "gemini-1.5-flash"
+    model_name="gemini-2.0-flash"
 )
 
 # =====================================================
@@ -210,8 +210,7 @@ try:
         for key, value in info_data.items():
 
             c1, c2 = st.columns(
-                [1, 3],
-                vertical_alignment="top"
+                [1, 3]
             )
 
             # -----------------------------------------
@@ -226,8 +225,7 @@ try:
                         color:#2c3e50;
                         font-size:16px;
                         line-height:1.8;
-                        padding-top:0px;
-                        margin-top:0px;
+                        padding-top:18px;
                     '>
                     {key}
                     </div>
@@ -246,6 +244,7 @@ try:
                         color:#444;
                         font-size:15px;
                         line-height:1.8;
+                        padding-top:18px;
                         white-space:pre-line;
                     '>
                     {value}
