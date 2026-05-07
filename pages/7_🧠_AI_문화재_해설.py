@@ -1,27 +1,23 @@
 import streamlit as st
 import pandas as pd
 
-# =====================================================
-# 페이지 설정
-# =====================================================
-st.set_page_config(
-    page_title="AI 문화재 해설",
-    layout="wide"
-)
-
+st.title("🧠 AI문화재_해설")
 # =====================================================
 # 메인 제목
 # =====================================================
-st.markdown("""
-<h1 style='
-    text-align:center;
-    font-size:34px;
-    color:#2c3e50;
-    margin-bottom:20px;
-'>
-🤖 AI 문화재 해설
-</h1>
-""", unsafe_allow_html=True)
+st.markdown(
+    """
+    <h1 style="
+        text-align:center;
+        font-size:34px;
+        color:#2c3e50;
+        margin-bottom:20px;
+    ">
+    🤖 AI 문화재 해설
+    </h1>
+    """,
+    unsafe_allow_html=True
+)
 
 # =====================================================
 # 데이터 로드
@@ -92,26 +88,29 @@ try:
     # =================================================
     # 문화재 제목 카드
     # =================================================
-    st.markdown(f"""
-    <div style='
-        background-color:#f8f9fa;
-        border:1px solid #e9ecef;
-        border-radius:12px;
-        padding:10px;
-        margin-bottom:15px;
-    '>
+    st.markdown(
+        f"""
+        <div style="
+            background-color:#f8f9fa;
+            border:1px solid #e9ecef;
+            border-radius:12px;
+            padding:12px;
+            margin-bottom:18px;
+        ">
 
-        <h3 style='
-            text-align:center;
-            margin:0;
-            color:#2c3e50;
-            font-size:28px;
-        '>
-            🏛 {heritage}
-        </h3>
+            <h3 style="
+                text-align:center;
+                margin:0;
+                color:#2c3e50;
+                font-size:28px;
+            ">
+                🏛 {heritage}
+            </h3>
 
-    </div>
-    """, unsafe_allow_html=True)
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     # =================================================
     # 본문 영역
@@ -147,16 +146,19 @@ try:
     # -------------------------------------------------
     with right_col:
 
-        st.markdown("""
-        <h2 style='
-            color:#2c3e50;
-            margin-top:0;
-            margin-bottom:15px;
-            font-size:24px;
-        '>
-        📋 상세 정보
-        </h2>
-        """, unsafe_allow_html=True)
+        st.markdown(
+            """
+            <h2 style="
+                color:#2c3e50;
+                margin-top:0;
+                margin-bottom:15px;
+                font-size:24px;
+            ">
+            📋 상세 정보
+            </h2>
+            """,
+            unsafe_allow_html=True
+        )
 
         info_data = {
 
@@ -195,12 +197,12 @@ try:
 
                 st.markdown(
                     f"""
-                    <div style='
+                    <div style="
                         font-weight:700;
                         color:#2c3e50;
                         font-size:16px;
                         padding-top:5px;
-                    '>
+                    ">
                     {key}
                     </div>
                     """,
@@ -211,11 +213,11 @@ try:
 
                 st.markdown(
                     f"""
-                    <div style='
+                    <div style="
                         color:#444;
                         font-size:15px;
                         line-height:1.6;
-                    '>
+                    ">
                     {value}
                     </div>
                     """,
@@ -223,7 +225,12 @@ try:
                 )
 
             st.markdown(
-                "<hr style='margin:8px 0; border:0.5px solid #eeeeee;'>",
+                """
+                <hr style="
+                    margin:8px 0;
+                    border:0.5px solid #eeeeee;
+                ">
+                """,
                 unsafe_allow_html=True
             )
 
@@ -249,20 +256,23 @@ try:
             )
         )
 
-        st.markdown(f"""
-        <div style='
-            background-color:white;
-            border:1px solid #eeeeee;
-            border-radius:12px;
-            padding:20px;
-            line-height:1.9;
-            font-size:16px;
-        '>
+        st.markdown(
+            f"""
+            <div style="
+                background-color:white;
+                border:1px solid #eeeeee;
+                border-radius:12px;
+                padding:20px;
+                line-height:1.9;
+                font-size:16px;
+            ">
 
-            {content}
+                {content}
 
-        </div>
-        """, unsafe_allow_html=True)
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
 
     # -------------------------------------------------
     # AI 스마트 해설 탭
