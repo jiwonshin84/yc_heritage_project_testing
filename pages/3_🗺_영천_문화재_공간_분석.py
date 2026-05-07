@@ -264,7 +264,7 @@ if selected_type != "전체":
     ]
 
 # =================================================
-# 검색 결과 표시 (위쪽으로 이동)
+# 검색 결과 표시
 # =================================================
 
 st.sidebar.info(
@@ -284,10 +284,23 @@ if len(filtered_df) == 0:
     st.stop()
 
 # =================================================
-# 선택 문화재 상태
+# 기본 선택 문화재
 # =================================================
 
 if "selected_heritage" not in st.session_state:
+
+    st.session_state.selected_heritage = (
+        filtered_df.iloc[0]["문화재명(국문)"]
+    )
+
+# =================================================
+# 선택 문화재가 필터 결과에 없으면 초기화
+# =================================================
+
+if (
+    st.session_state.selected_heritage
+    not in filtered_df["문화재명(국문)"].values
+):
 
     st.session_state.selected_heritage = (
         filtered_df.iloc[0]["문화재명(국문)"]
@@ -303,6 +316,15 @@ selected_row = filtered_df[
 ].iloc[0]
 
 # =================================================
+# 지도 중심
+# =================================================
+
+map_center = [
+    selected_row["위도"],
+    selected_row["경도"]
+]
+
+# =================================================
 # 레이아웃
 # =================================================
 
@@ -316,18 +338,13 @@ map_col, list_col = st.columns(
 
 with map_col:
 
-    center = [
-        selected_row["위도"],
-        selected_row["경도"]
-    ]
-
     # -------------------------------------------------
     # 지도 생성
     # -------------------------------------------------
 
     m = folium.Map(
-        location=center,
-        zoom_start=13,
+        location=map_center,
+        zoom_start=14,
         tiles="CartoDB positron"
     )
 
@@ -358,7 +375,7 @@ with map_col:
         )
 
         # ---------------------------------------------
-        # 이미지 html
+        # 이미지 HTML
         # ---------------------------------------------
 
         if (
@@ -458,7 +475,7 @@ with map_col:
         """
 
         # ---------------------------------------------
-        # iframe popup
+        # popup
         # ---------------------------------------------
 
         iframe = folium.IFrame(
@@ -473,7 +490,7 @@ with map_col:
         )
 
         # ---------------------------------------------
-        # 선택 마커 색상
+        # 선택 마커 강조
         # ---------------------------------------------
 
         marker_color = "blue"
@@ -559,12 +576,17 @@ with list_col:
             == st.session_state.selected_heritage
         )
 
-        # ---------------------------------------------
-        # 선택 시 스타일 변경
-        # ---------------------------------------------
+        bg_color = (
+            "#ffe4e1"
+            if selected
+            else "#f8f9fa"
+        )
 
-        bg_color = "#ffe4e1" if selected else "#f8f9fa"
-        border = "2px solid #ff4b4b" if selected else "1px solid #ddd"
+        border = (
+            "2px solid #ff4b4b"
+            if selected
+            else "1px solid #ddd"
+        )
 
         if st.button(
             heritage_name,
