@@ -1,3 +1,6 @@
+# 영천 문화재 공간분석 전체 코드
+
+```python
 import streamlit as st
 import pandas as pd
 import folium
@@ -26,6 +29,7 @@ df = pd.read_csv(
 )
 
 # 컬럼 공백 제거
+
 df.columns = df.columns.str.strip()
 
 # =================================================
@@ -47,17 +51,11 @@ def simplify_era(text):
 
     text = str(text).strip()
 
-    # -------------------------------------------------
     # 청동기
-    # -------------------------------------------------
-
     if "청동기" in text:
         return "청동기"
 
-    # -------------------------------------------------
     # 신라
-    # -------------------------------------------------
-
     elif (
         "통일신라" in text or
         "신라시대 후기" in text
@@ -67,10 +65,7 @@ def simplify_era(text):
     elif "신라" in text:
         return "신라"
 
-    # -------------------------------------------------
     # 고려
-    # -------------------------------------------------
-
     elif (
         "고려시대 초기" in text or
         "고려 초기" in text
@@ -86,10 +81,7 @@ def simplify_era(text):
     elif "고려" in text:
         return "고려"
 
-    # -------------------------------------------------
     # 조선 초기
-    # -------------------------------------------------
-
     elif (
         "세종" in text or
         "태조" in text or
@@ -104,10 +96,7 @@ def simplify_era(text):
     ):
         return "조선초기"
 
-    # -------------------------------------------------
     # 조선 후기
-    # -------------------------------------------------
-
     elif (
         "숙종" in text or
         "영조" in text or
@@ -119,10 +108,7 @@ def simplify_era(text):
     ):
         return "조선후기"
 
-    # -------------------------------------------------
     # 조선 직접 표기
-    # -------------------------------------------------
-
     elif (
         "조선시대 초기" in text or
         "조선 초기" in text
@@ -138,17 +124,11 @@ def simplify_era(text):
     elif "조선" in text:
         return "조선"
 
-    # -------------------------------------------------
     # 대한제국
-    # -------------------------------------------------
-
     elif "대한제국" in text:
         return "대한제국"
 
-    # -------------------------------------------------
     # 연도 기반 추정
-    # -------------------------------------------------
-
     year_match = re.search(
         r"\d{4}",
         text
@@ -284,34 +264,6 @@ st.sidebar.success(
 )
 
 # =================================================
-# 문화재 목록
-# =================================================
-
-heritage_names = (
-    filtered_df["문화재명(국문)"]
-    .dropna()
-    .tolist()
-)
-
-st.sidebar.markdown(
-    "### 🏛 문화재 목록"
-)
-
-if len(heritage_names) > 0:
-
-    for name in heritage_names:
-
-        st.sidebar.markdown(
-            f"- {name}"
-        )
-
-else:
-
-    st.sidebar.warning(
-        "검색 결과 없음"
-    )
-
-# =================================================
 # 결과 없을 경우
 # =================================================
 
@@ -324,215 +276,262 @@ if len(filtered_df) == 0:
     st.stop()
 
 # =================================================
-# 지도 중심
+# 세션 상태 초기화
 # =================================================
 
-center = [
-    filtered_df["위도"].mean(),
-    filtered_df["경도"].mean()
-]
+if "selected_lat" not in st.session_state:
+    st.session_state.selected_lat = filtered_df.iloc[0]["위도"]
+
+if "selected_lon" not in st.session_state:
+    st.session_state.selected_lon = filtered_df.iloc[0]["경도"]
 
 # =================================================
-# 지도 생성
+# 레이아웃
 # =================================================
 
-m = folium.Map(
-    location=center,
-    zoom_start=10,
-    tiles="CartoDB positron"
+map_col, list_col = st.columns(
+    [4, 1]
 )
 
 # =================================================
-# 마커 클러스터
+# 지도 영역
 # =================================================
 
-marker_cluster = MarkerCluster().add_to(m)
+with map_col:
 
-# =================================================
-# 마커 생성
-# =================================================
+    center = [
+        st.session_state.selected_lat,
+        st.session_state.selected_lon
+    ]
 
-for idx, row in filtered_df.iterrows():
+    # -------------------------------------------------
+    # 지도 생성
+    # -------------------------------------------------
 
-    heritage_name = row.get(
-        "문화재명(국문)",
-        "문화재"
-    )
-
-    image_url = str(
-        row.get("이미지URL", "")
-    ).strip()
-
-    image_url = image_url.replace(
-        "http://",
-        "https://"
+    m = folium.Map(
+        location=center,
+        zoom_start=13,
+        tiles="CartoDB positron"
     )
 
     # -------------------------------------------------
-    # 이미지 HTML
+    # 마커 클러스터
     # -------------------------------------------------
 
-    if (
-        image_url == ""
-        or image_url.lower() == "nan"
-    ):
-
-        image_html = """
-        <div style="
-            width:320px;
-            height:220px;
-            background:#f2f2f2;
-            border-radius:12px;
-            display:flex;
-            justify-content:center;
-            align-items:center;
-            color:#777;
-            margin:auto;
-        ">
-            이미지 없음
-        </div>
-        """
-
-    else:
-
-        image_html = f"""
-        <div style="text-align:center;">
-
-            <a href="{image_url}" target="_blank">
-
-                <img
-                    src="{image_url}"
-
-                    style="
-                        width:320px;
-                        height:220px;
-                        object-fit:cover;
-                        border-radius:12px;
-                        box-shadow:0 2px 8px rgba(0,0,0,0.2);
-                    "
-
-                    onerror="
-                        this.style.display='none';
-                    "
-                >
-
-            </a>
-
-        </div>
-        """
+    marker_cluster = MarkerCluster().add_to(m)
 
     # -------------------------------------------------
-    # popup html
+    # 마커 생성
     # -------------------------------------------------
 
-    popup_html = f"""
-    <div style="
-        width:340px;
-        padding:15px;
-        text-align:center;
-        font-family:sans-serif;
-    ">
+    for idx, row in filtered_df.iterrows():
 
-        <h2 style="
-            margin-bottom:15px;
-            color:#222;
-        ">
-            {heritage_name}
-        </h2>
-
-        {image_html}
-
-        <br>
-
-        <table style="
-            width:85%;
-            margin:auto;
-            font-size:15px;
-            line-height:2;
-            text-align:left;
-        ">
-
-            <tr>
-                <td><b>시대</b></td>
-                <td>{row.get("시대그룹", "-")}</td>
-            </tr>
-
-            <tr>
-                <td><b>종목</b></td>
-                <td>{row.get("국가유산종목", "-")}</td>
-            </tr>
-
-        </table>
-
-        <br>
-
-        <div style="
-            font-size:13px;
-            color:#666;
-            white-space:nowrap;
-        ">
-            이미지를 클릭하면 새 창에서 크게 볼 수 있습니다.
-        </div>
-
-    </div>
-    """
-
-    # -------------------------------------------------
-    # iframe popup
-    # -------------------------------------------------
-
-    iframe = folium.IFrame(
-        html=popup_html,
-        width=380,
-        height=500
-    )
-
-    popup = folium.Popup(
-        iframe,
-        max_width=420
-    )
-
-    # -------------------------------------------------
-    # marker
-    # -------------------------------------------------
-
-    folium.Marker(
-        location=[
-            row["위도"],
-            row["경도"]
-        ],
-
-        popup=popup,
-
-        tooltip=heritage_name,
-
-        icon=folium.Icon(
-            color="red",
-            icon="info-sign"
+        heritage_name = row.get(
+            "문화재명(국문)",
+            "문화재"
         )
 
-    ).add_to(marker_cluster)
+        image_url = str(
+            row.get("이미지URL", "")
+        ).strip()
+
+        image_url = image_url.replace(
+            "http://",
+            "https://"
+        )
+
+        # ---------------------------------------------
+        # 이미지 HTML
+        # ---------------------------------------------
+
+        if (
+            image_url == ""
+            or image_url.lower() == "nan"
+        ):
+
+            image_html = """
+            <div style="
+                width:320px;
+                height:220px;
+                background:#f2f2f2;
+                border-radius:12px;
+                display:flex;
+                justify-content:center;
+                align-items:center;
+                color:#777;
+                margin:auto;
+            ">
+                이미지 없음
+            </div>
+            """
+
+        else:
+
+            image_html = f"""
+            <div style="text-align:center;">
+
+                <a href="{image_url}" target="_blank">
+
+                    <img
+                        src="{image_url}"
+
+                        style="
+                            width:320px;
+                            height:220px;
+                            object-fit:cover;
+                            border-radius:12px;
+                            box-shadow:0 2px 8px rgba(0,0,0,0.2);
+                        "
+
+                        onerror="
+                            this.style.display='none';
+                        "
+                    >
+
+                </a>
+
+            </div>
+            """
+
+        # ---------------------------------------------
+        # popup html
+        # ---------------------------------------------
+
+        popup_html = f"""
+        <div style="
+            width:340px;
+            padding:15px;
+            text-align:center;
+            font-family:sans-serif;
+        ">
+
+            <h2 style="
+                margin-bottom:15px;
+                color:#222;
+            ">
+                {heritage_name}
+            </h2>
+
+            {image_html}
+
+            <br>
+
+            <table style="
+                width:85%;
+                margin:auto;
+                font-size:15px;
+                line-height:2;
+                text-align:left;
+            ">
+
+                <tr>
+                    <td><b>시대</b></td>
+                    <td>{row.get("시대그룹", "-")}</td>
+                </tr>
+
+                <tr>
+                    <td><b>종목</b></td>
+                    <td>{row.get("국가유산종목", "-")}</td>
+                </tr>
+
+            </table>
+
+            <br>
+
+            <div style="
+                font-size:13px;
+                color:#666;
+                white-space:nowrap;
+            ">
+                이미지를 클릭하면 새 창에서 크게 볼 수 있습니다.
+            </div>
+
+        </div>
+        """
+
+        # ---------------------------------------------
+        # iframe popup
+        # ---------------------------------------------
+
+        iframe = folium.IFrame(
+            html=popup_html,
+            width=380,
+            height=500
+        )
+
+        popup = folium.Popup(
+            iframe,
+            max_width=420
+        )
+
+        # ---------------------------------------------
+        # marker
+        # ---------------------------------------------
+
+        folium.Marker(
+            location=[
+                row["위도"],
+                row["경도"]
+            ],
+
+            popup=popup,
+
+            tooltip=heritage_name,
+
+            icon=folium.Icon(
+                color="red",
+                icon="info-sign"
+            )
+
+        ).add_to(marker_cluster)
+
+    # -------------------------------------------------
+    # HeatMap
+    # -------------------------------------------------
+
+    heat_data = filtered_df[
+        ["위도", "경도"]
+    ].values.tolist()
+
+    HeatMap(
+        heat_data,
+        radius=20,
+        blur=15
+    ).add_to(m)
+
+    # -------------------------------------------------
+    # 지도 출력
+    # -------------------------------------------------
+
+    st_folium(
+        m,
+        width=1100,
+        height=750
+    )
 
 # =================================================
-# HeatMap
+# 오른쪽 문화재 목록
 # =================================================
 
-heat_data = filtered_df[
-    ["위도", "경도"]
-].values.tolist()
+with list_col:
 
-HeatMap(
-    heat_data,
-    radius=20,
-    blur=15
-).add_to(m)
+    st.markdown("## 🏛 문화재 목록")
 
-# =================================================
-# 지도 출력
-# =================================================
+    for idx, row in filtered_df.iterrows():
 
-st_folium(
-    m,
-    width=1400,
-    height=750
-)
+        heritage_name = row.get(
+            "문화재명(국문)",
+            "문화재"
+        )
+
+        if st.button(
+            heritage_name,
+            key=f"heritage_{idx}",
+            use_container_width=True
+        ):
+
+            st.session_state.selected_lat = row["위도"]
+            st.session_state.selected_lon = row["경도"]
+
+            st.rerun()
+```
