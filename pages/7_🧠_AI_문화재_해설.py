@@ -17,12 +17,11 @@ df = pd.read_csv(
 # =========================
 category = st.selectbox(
     "문화재 품목 선택",
-    sorted(df["종목"].dropna().unique())
+    sorted(df["국가유산종목"].dropna().unique())
 )
 
-# 선택한 품목만 필터링
 filtered_df = df[
-    df["종목"] == category
+    df["국가유산종목"] == category
 ]
 
 # =========================
@@ -33,7 +32,6 @@ heritage = st.selectbox(
     filtered_df["문화재명(국문)"]
 )
 
-# 선택 데이터
 row = filtered_df[
     filtered_df["문화재명(국문)"] == heritage
 ].iloc[0]
@@ -41,47 +39,111 @@ row = filtered_df[
 # =========================
 # 제목
 # =========================
-st.subheader(heritage)
+st.markdown(f"""
+<h2 style='text-align:center;'>
+🏛 {heritage}
+</h2>
+""", unsafe_allow_html=True)
 
 # =========================
-# 이미지 표시
+# 좌우 배치
 # =========================
-# CSV 안 이미지 URL 컬럼명 확인 필요
-# 예시: "imageUrl" 또는 "이미지URL"
+left_col, right_col = st.columns([1, 1.5])
 
-image_url = row.get("imageUrl", None)
+# -------------------------
+# 왼쪽 : 이미지
+# -------------------------
+with left_col:
 
-if pd.notna(image_url):
-    st.image(
-        image_url,
-        caption=heritage,
-        use_container_width=True
-    )
+    # 실제 컬럼명에 맞게 수정 가능
+    image_url = row.get("imageUrl", None)
 
-# =========================
-# 기본 정보
-# =========================
-col1, col2 = st.columns(2)
+    if pd.notna(image_url):
+        st.image(
+            image_url,
+            use_container_width=True
+        )
+    else:
+        st.warning("이미지 없음")
 
-with col1:
-    st.write("### 시대")
-    st.info(row["시대"])
+# -------------------------
+# 오른쪽 : 상세 정보
+# -------------------------
+with right_col:
 
-with col2:
-    st.write("### 종목")
-    st.info(row["종목"])
+    info_html = f"""
+    <table style="width:100%; border-collapse:collapse;">
+
+    <tr>
+        <td style="font-weight:bold; width:30%;">국가유산종목</td>
+        <td>{row['국가유산종목']}</td>
+    </tr>
+
+    <tr>
+        <td style="font-weight:bold;">국가유산분류</td>
+        <td>{row['국가유산분류']}</td>
+    </tr>
+
+    <tr>
+        <td style="font-weight:bold;">국가유산분류2</td>
+        <td>{row['국가유산분류2']}</td>
+    </tr>
+
+    <tr>
+        <td style="font-weight:bold;">국가유산분류3</td>
+        <td>{row['국가유산분류3']}</td>
+    </tr>
+
+    <tr>
+        <td style="font-weight:bold;">국가유산분류4</td>
+        <td>{row['국가유산분류4']}</td>
+    </tr>
+
+    <tr>
+        <td style="font-weight:bold;">문화재명(국문)</td>
+        <td>{row['문화재명(국문)']}</td>
+    </tr>
+
+    <tr>
+        <td style="font-weight:bold;">문화재명(한자)</td>
+        <td>{row['문화재명(한자)']}</td>
+    </tr>
+
+    <tr>
+        <td style="font-weight:bold;">소재지상세</td>
+        <td>{row['소재지상세']}</td>
+    </tr>
+
+    <tr>
+        <td style="font-weight:bold;">시대</td>
+        <td>{row['시대']}</td>
+    </tr>
+
+    <tr>
+        <td style="font-weight:bold;">소유자</td>
+        <td>{row['소유자']}</td>
+    </tr>
+
+    <tr>
+        <td style="font-weight:bold;">관리자</td>
+        <td>{row['관리자']}</td>
+    </tr>
+
+    </table>
+    """
+
+    st.markdown(info_html, unsafe_allow_html=True)
 
 # =========================
 # 설명
 # =========================
-st.write("### 설명")
+st.markdown("---")
+
+st.write("### 📖 문화재 설명")
 
 content = str(row["내용"])
 
-if len(content) > 500:
-    content = content[:500] + "..."
-
-st.write(content)
+st.info(content)
 
 # =========================
 # AI 해설
@@ -90,11 +152,11 @@ st.write("### 🤖 AI 해설")
 
 st.success(f"""
 {heritage}은(는)
+{row['시대']} 시대의 문화재로,
 
-{row["시대"]} 시대에 만들어진
-{row["종목"]} 문화재입니다.
+영천 지역의 역사와 문화적 특징을
+잘 보여주는 중요한 국가유산입니다.
 
-역사적·문화적 가치가 높으며,
-영천 지역의 역사와 문화를 이해하는 데
-중요한 국가유산입니다.
+특히 {row['국가유산분류']} 분야에서
+높은 역사적 가치를 지니고 있습니다.
 """)
