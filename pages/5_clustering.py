@@ -5,7 +5,7 @@ import plotly.express as px
 st.title("🤖 문화재 군집분석")
 
 df = pd.read_csv(
-    "data/processed/영천_군집분석.csv"
+    "data/processed/yc_clustering.csv"
 )
 
 st.subheader("군집별 분포")
