@@ -400,6 +400,106 @@ with left2:
         fig3,
         use_container_width=True
     )
+
+
+# =================================================
+# 4. 경북 지역별 종목 현황 Heatmap
+# =================================================
+
+with right2:
+
+    st.markdown("""
+    <h3 style="
+    font-size:24px;
+    margin-bottom:10px;
+    ">
+    🌡 경북 지역별 문화유산 종목 현황
+    </h3>
+    """, unsafe_allow_html=True)
+
+    # -------------------------------------------------
+    # 경북 데이터
+    # -------------------------------------------------
+
+    gb_df = df[
+        df["시도명"] == "경북"
+    ].copy()
+
+    # -------------------------------------------------
+    # Pivot Table 생성
+    # -------------------------------------------------
+
+    heatmap_df = pd.pivot_table(
+
+        gb_df,
+
+        index="시군구명",
+
+        columns="국가유산종목",
+
+        aggfunc="size",
+
+        fill_value=0
+
+    )
+
+    # -------------------------------------------------
+    # 상위 도시만
+    # -------------------------------------------------
+
+    top_cities = (
+        gb_df["시군구명"]
+        .value_counts()
+        .head(15)
+        .index
+    )
+
+    heatmap_df = (
+        heatmap_df
+        .loc[top_cities]
+    )
+
+    # -------------------------------------------------
+    # Heatmap
+    # -------------------------------------------------
+
+    fig4 = px.imshow(
+
+        heatmap_df,
+
+        text_auto=True,
+
+        color_continuous_scale="YlGnBu",
+
+        aspect="auto"
+
+    )
+
+    fig4.update_layout(
+
+        height=500,
+
+        margin=dict(
+            t=20,
+            l=10,
+            r=10,
+            b=10
+        ),
+
+        xaxis_title="문화유산 종목",
+
+        yaxis_title="경북 지역",
+
+        coloraxis_showscale=False
+
+    )
+
+    st.plotly_chart(
+        fig4,
+        use_container_width=True
+    )
+
+
 # =================================================
 # 하단 설명
 # =================================================
