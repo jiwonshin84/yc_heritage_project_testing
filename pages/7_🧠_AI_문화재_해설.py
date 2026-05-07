@@ -13,7 +13,7 @@ st.set_page_config(
 # =====================================================
 # Gemini API 설정
 # =====================================================
-GEMINI_API_KEY = "AIzaSyCeNS_TTBIU6LmchWVdpki-Z9k0-MbKL6E"
+GEMINI_API_KEY = "AIzaSyAUJzBLV6EDCWTROatmV9ohhzBWlVANWNw"
 
 genai.configure(
     api_key=GEMINI_API_KEY
