@@ -242,7 +242,7 @@ df = pd.read_csv(
 # 제목
 # ==========================================================
 st.markdown("""
-<h1 style='font-size:20px;'>
+<h1 style='font-size:30px;'>
 🏛 공공 환경 데이터 기반 영천 지역 문화재 훼손 위험 예측
 </h1>
 """, unsafe_allow_html=True)
@@ -257,7 +257,14 @@ st.divider()
 # 상단 환경 대시보드
 # ============================================
 
-st.subheader("🌿 영천시 환경 데이터 및 문화재 현황")
+st.markdown("""
+<h3 style="
+    font-size:20px;
+    margin-bottom:10px;
+">
+🌿 영천시 환경 데이터 및 문화재 현황
+</h3>
+""", unsafe_allow_html=True)
 
 # 메인 영역
 left, center, right = st.columns([1.4, 2.0, 1.0])
