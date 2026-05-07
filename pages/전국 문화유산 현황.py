@@ -4,7 +4,7 @@ import plotly.express as px
 
 st.title("🇰🇷 전국 문화유산 현황")
 
-df = pd.read_csv("data/raw/전국문화재.csv")
+df = pd.read_csv("data/raw/all_heritage.csv")
 
 st.subheader("국가유산 종목별 현황")
 
