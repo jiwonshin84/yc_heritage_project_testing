@@ -14,7 +14,6 @@ st.markdown("""
 # 2. 데이터 불러오기
 @st.cache_data
 def load_data():
-    # 파일 경로가 실제 환경과 맞는지 확인하세요.
     return pd.read_csv("data/processed/yc_heritage_detail_enriched.csv")
 
 try:
@@ -24,7 +23,6 @@ try:
     col_select1, col_select2 = st.columns(2)
 
     with col_select1:
-        # 컬럼명이 '종목'인지 '국가유산종목'인지 데이터프레임에 맞춰 확인 필요
         category_col = "종목" if "종목" in df.columns else "국가유산종목"
         category = st.selectbox(
             "📂 문화재 품목 선택",
@@ -42,6 +40,10 @@ try:
     # 선택된 행 데이터
     row = filtered_df[filtered_df["문화재명(국문)"] == heritage].iloc[0]
 
+    # 데이터 정제 함수
+    def clean(val):
+        return str(val) if pd.notna(val) and str(val).strip() != "" else "-"
+
     # 4. 중앙 제목 섹션
     st.markdown(f"""
     <div style="background-color: #f8f9fa; padding: 20px; border-radius: 15px; margin-bottom: 30px; border: 1px solid #e9ecef;">
@@ -51,7 +53,7 @@ try:
     </div>
     """, unsafe_allow_html=True)
 
-    # 5. 메인 컨텐츠 (이미지 + 상세정보 테이블)
+    # 5. 메인 컨텐츠 (이미지 + 상세정보)
     left_col, right_col = st.columns([1, 1.2])
 
     # --- 왼쪽: 이미지 ---
@@ -69,13 +71,8 @@ try:
             </div>
             """, unsafe_allow_html=True)
 
-    # --- 오른쪽: 상세 정보 테이블 ---
+    # --- 오른쪽: 상세 정보 (st.columns 방식으로 변경) ---
     with right_col:
-        # 데이터 정제 함수 (NaN 처리)
-        def clean(val):
-            return str(val) if pd.notna(val) and str(val).strip() != "" else "-"
-
-        # 표시할 항목 정리
         info_data = {
             "종목": clean(row.get(category_col)),
             "분류": f"{clean(row.get('국가유산분류'))} ({clean(row.get('국가유산분류2'))})",
@@ -85,24 +82,14 @@ try:
             "소유자/관리자": f"{clean(row.get('소유자'))} / {clean(row.get('관리자'))}"
         }
 
-        # HTML 테이블 생성 (문자열 결합 방식이 렌더링 오류가 적습니다)
-        rows_html = ""
+        st.markdown("#### 📋 상세 정보")
         for key, value in info_data.items():
-            rows_html += f"""
-            <tr style="border-bottom: 1px solid #eee;">
-                <td style="padding: 12px; font-weight: bold; background-color: #fcfcfc; width: 35%; color: #495057;">{key}</td>
-                <td style="padding: 12px; color: #212529;">{value}</td>
-            </tr>
-            """
-        
-        table_html = f"""
-        <table style="width:100%; border-collapse:collapse; border: 1px solid #eee; font-size: 15px;">
-            <tbody>
-                {rows_html}
-            </tbody>
-        </table>
-        """
-        st.markdown(table_html, unsafe_allow_html=True)
+            col_a, col_b = st.columns([1, 2])
+            with col_a:
+                st.markdown(f"**{key}**")
+            with col_b:
+                st.markdown(value)
+            st.divider()
 
     # 6. 하단 설명 및 AI 해설 (탭 구성)
     st.markdown("<br>", unsafe_allow_html=True)
@@ -122,10 +109,4 @@ try:
         **{heritage}**은(는) **{clean(row.get('시대'))}** 시대의 숨결을 간직한 소중한 유산입니다.
         
         현재 **{clean(row.get('소재지상세'))}**에 보존되어 있으며, 
-        **{clean(row.get(category_col))}**으로서 학술적 가치가 매우 높습니다.
-        
-        특히 이 유산은 영천 지역의 역사적 정체성을 잘 보여주는 중요한 지표가 됩니다.
-        """)
-
-except Exception as e:
-    st.error(f"데이터를 불러오거나 처리하는 중 오류가 발생했습니다: {e}")
+        **{clean(ro
