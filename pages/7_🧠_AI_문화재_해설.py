@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import google.generativeai as genai
 
 # =====================================================
 # 페이지 설정
@@ -8,6 +9,15 @@ st.set_page_config(
     page_title="AI 문화재 해설",
     layout="wide"
 )
+
+# =====================================================
+# Gemini API 설정
+# =====================================================
+GEMINI_API_KEY = "AIzaSyCeNS_TTBIU6LmchWVdpki-Z9k0-MbKL6E"
+
+genai.configure(api_key=GEMINI_API_KEY)
+
+model = genai.GenerativeModel("gemini-1.5-flash")
 
 # =====================================================
 # 메인 제목
@@ -19,6 +29,7 @@ st.title("🤖 AI 문화재 해설")
 # =====================================================
 @st.cache_data
 def load_data():
+
     return pd.read_csv(
         "data/processed/yc_heritage_detail_enriched.csv"
     )
@@ -207,30 +218,9 @@ try:
         # =================================================
         st.markdown("### 📖 상세 설명")
 
-        content = str(
-            row.get(
-                "내용",
-                "상세 설명 정보가 없습니다."
-            )
-        )
+        content = clean(row.get("내용"))
 
-        st.markdown(
-            f"""
-            <div style='
-                background-color:white;
-                border:1px solid #eeeeee;
-                border-radius:12px;
-                padding:20px;
-                line-height:1.9;
-                font-size:16px;
-            '>
-
-                {content}
-
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        st.write(content)
 
     # =================================================
     # AI 스마트 해설
@@ -253,6 +243,54 @@ try:
 특히 이 유산은
 영천 지역의 역사적 정체성을 잘 보여주는 중요한 지표가 됩니다.
 """)
+
+    # =================================================
+    # Gemini AI 질문하기
+    # =================================================
+    st.markdown("---")
+
+    st.subheader("💬 AI에게 문화재 질문하기")
+
+    user_question = st.text_input(
+        "문화재에 대해 궁금한 점을 입력하세요"
+    )
+
+    if st.button("🤖 질문하기"):
+
+        if user_question.strip() == "":
+
+            st.warning("질문을 입력해주세요.")
+
+        else:
+
+            with st.spinner("AI가 답변 생성 중입니다..."):
+
+                prompt = f"""
+                너는 한국 문화재 전문 도슨트 AI이다.
+
+                문화재 이름:
+                {heritage}
+
+                문화재 설명:
+                {content}
+
+                시대:
+                {시대}
+
+                소재지:
+                {소재지}
+
+                사용자 질문:
+                {user_question}
+
+                친절하고 이해하기 쉽게 답변해줘.
+                """
+
+                response = model.generate_content(prompt)
+
+                st.markdown("### 🤖 AI 답변")
+
+                st.write(response.text)
 
 # =====================================================
 # 오류 처리
