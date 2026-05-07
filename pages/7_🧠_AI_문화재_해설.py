@@ -205,6 +205,7 @@ try:
             """
             <h3 style='
                 margin-top:0;
+                margin-bottom:8px;
                 color:#2c3e50;
             '>
             📋 상세 정보
@@ -261,10 +262,13 @@ try:
         for key, value in info_data.items():
 
             c1, c2 = st.columns(
-                [1, 3],
+                [0.8, 3.2],
                 vertical_alignment="center"
             )
 
+            # -----------------------------------------
+            # 왼쪽 제목
+            # -----------------------------------------
             with c1:
 
                 st.markdown(
@@ -273,7 +277,9 @@ try:
                         font-weight:700;
                         color:#2c3e50;
                         font-size:16px;
-                        line-height:1.8;
+                        line-height:1.2;
+                        padding:0;
+                        margin:0;
                     '>
 
                     {key}
@@ -283,6 +289,9 @@ try:
                     unsafe_allow_html=True
                 )
 
+            # -----------------------------------------
+            # 오른쪽 내용
+            # -----------------------------------------
             with c2:
 
                 st.markdown(
@@ -290,8 +299,10 @@ try:
                     <div style='
                         color:#444;
                         font-size:15px;
-                        line-height:1.8;
+                        line-height:1.3;
                         white-space:pre-line;
+                        padding:0;
+                        margin:0;
                     '>
 
                     {value}
@@ -301,10 +312,13 @@ try:
                     unsafe_allow_html=True
                 )
 
+            # -----------------------------------------
+            # 구분선
+            # -----------------------------------------
             st.markdown(
                 """
                 <hr style='
-                    margin:8px 0;
+                    margin:2px 0;
                     border:0.5px solid #eeeeee;
                 '>
                 """,
