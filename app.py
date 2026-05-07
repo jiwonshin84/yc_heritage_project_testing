@@ -257,20 +257,35 @@ st.divider()
 # 상단 환경 대시보드
 # ============================================
 
-st.subheader("📡 영천 문화재 환경 모니터링")
+st.subheader("🌿 영천 문화재 보존 환경 현황")
 
-# 3개 영역
+# 메인 영역
 left, center, right = st.columns([1.4, 2.2, 1.0])
 
+# 공통 박스 스타일
+box_style = """
+    background-color:#f8f9fa;
+    padding:20px;
+    border-radius:18px;
+    border:1px solid #e6e6e6;
+    box-shadow:0 4px 10px rgba(0,0,0,0.05);
+"""
+
 # ============================================
-# 1열 : 기상 정보
+# 1열 : 기상 환경
 # ============================================
 
 with left:
 
-    st.markdown("### 🌦 기상 환경")
+    st.markdown(
+        f"""
+        <div style="{box_style}">
+            <h3>🌦 기상 환경</h3>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
-    # 2열 구성
     w1, w2 = st.columns(2)
 
     with w1:
@@ -297,41 +312,56 @@ with left:
             f"{wind_speed} m/s"
         )
 
-    # 기상 측정 시각
     st.caption(f"⏱ 기상 측정 시각: {tm}")
 
-
 # ============================================
-# 2열 : 대기오염 정보
+# 2열 : 대기오염
 # ============================================
 
 with center:
 
-    st.markdown("### 🌫 대기오염 현황")
+    st.markdown(
+        f"""
+        <div style="{box_style}">
+            <h3>🌫 대기오염 현황</h3>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     a1, a2, a3 = st.columns(3)
 
     with a1:
+
         st.metric("PM10", pm10)
         st.metric("O₃", o3)
 
     with a2:
+
         st.metric("PM2.5", pm25)
         st.metric("NO₂", no2)
 
     with a3:
+
         st.metric("CO", co)
         st.metric("SO₂", so2)
 
-    st.caption(f"⏱ 측정 시각: {data_time}")
+    st.caption(f"⏱ 대기질 측정 시각: {data_time}")
 
 # ============================================
-# 3열 : 문화재 위험 현황
+# 3열 : 문화재 현황
 # ============================================
 
 with right:
 
-    st.markdown("### 🏛 문화재 현황")
+    st.markdown(
+        f"""
+        <div style="{box_style}">
+            <h3>🏛 문화재 현황</h3>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     st.metric(
         "분석 문화재 수",
