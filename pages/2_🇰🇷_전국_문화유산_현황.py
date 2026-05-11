@@ -154,14 +154,14 @@ if df is not None:
         st.plotly_chart(fig5, use_container_width=True)
 
     with row3_left:
-        st.markdown("### 🏺 지역별 국보 · 보물 비중 (비율 높은 순)")
+        st.markdown("### 🏺 지역별 국보 비중 (비율 높은 순)")
         
         # 1. 데이터 준비
         total_count = gb_df.groupby("시군구명").size().reset_index(name="전체개수")
-        treasure_count = gb_df[gb_df["국가유산종목"].isin(["국보", "보물"])].groupby("시군구명").size().reset_index(name="국보보물개수")
+        treasure_count = gb_df[gb_df["국가유산종목"].isin(["국보"])].groupby("시군구명").size().reset_index(name="국보개수")
         
         ratio_df = pd.merge(total_count, treasure_count, on="시군구명", how="left").fillna(0)
-        ratio_df["비율"] = (ratio_df["국보보물개수"] / ratio_df["전체개수"]) * 100
+        ratio_df["비율"] = (ratio_df["국보개수"] / ratio_df["전체개수"]) * 100
         
         # [정렬 기준] '비율'이 높은 순서대로 상위 15개 추출
         ratio_df = ratio_df.sort_values("비율", ascending=False).head(15)
@@ -177,14 +177,14 @@ if df is not None:
             hovertemplate='전체: %{x}개<extra></extra>'
         ))
 
-        # 전경: 국보/보물 (강조 색상)
+        # 전경: 국보 (강조 색상)
         fig6.add_trace(go.Bar(
-            y=ratio_df["시군구명"], x=ratio_df["국보보물개수"],
-            name="국보 · 보물", orientation='h',
+            y=ratio_df["시군구명"], x=ratio_df["국보개수"],
+            name="국보", orientation='h',
             marker=dict(color='#E67E22'), 
             text=ratio_df["비율"].apply(lambda x: f'{x:.1f}%'),
             textposition='outside',
-            hovertemplate='국보·보물: %{x}개<extra></extra>'
+            hovertemplate='국보: %{x}개<extra></extra>'
         ))
 
         # 3. 레이아웃 설정
