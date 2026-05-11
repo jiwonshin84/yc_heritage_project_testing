@@ -259,7 +259,7 @@ st.divider()
 
 st.markdown("""
 <h3 style="
-    font-size:20px;
+    font-size:25px;
     margin-bottom:10px;
 ">
 🌿 영천시 환경 데이터 및 문화재 현황
