@@ -152,8 +152,8 @@ if df is not None:
         fig5.update_layout(height=550, margin=dict(t=20, l=10, r=10, b=10), coloraxis_showscale=False)
         st.plotly_chart(fig5, use_container_width=True)
 
-    with row3_left:
-        st.markdown("### 🏺 지역별 국보 · 보물 비중 (전체 수량 순 상위 15개)")
+with row3_left:
+        st.markdown("### 🏺 지역별 국보 · 보물 비중 (비율 높은 순)")
         
         # 1. 데이터 준비
         total_count = gb_df.groupby("시군구명").size().reset_index(name="전체개수")
@@ -162,10 +162,10 @@ if df is not None:
         ratio_df = pd.merge(total_count, treasure_count, on="시군구명", how="left").fillna(0)
         ratio_df["비율"] = (ratio_df["국보보물개수"] / ratio_df["전체개수"]) * 100
         
-        # [수정] 정렬 기준: 전체 문화유산 개수가 많은 순서대로 상위 15개 추출
-        ratio_df = ratio_df.sort_values("전체개수", ascending=False).head(15)
+        # [정렬 기준 변경] '비율'이 높은 순서대로 상위 15개 추출
+        ratio_df = ratio_df.sort_values("비율", ascending=False).head(15)
 
-        # 2. 중첩 막대 차트(Overlaid Bar Chart) 생성
+        # 2. 중첩 막대 차트 생성
         fig6 = go.Figure()
         
         # 배경: 전체 문화유산 (연한 회색)
@@ -176,12 +176,11 @@ if df is not None:
             hovertemplate='전체: %{x}개<extra></extra>'
         ))
 
-        # 전경: 국보/보물 (Teal 색상)
+        # 전경: 국보/보물 (강조 색상)
         fig6.add_trace(go.Bar(
             y=ratio_df["시군구명"], x=ratio_df["국보보물개수"],
             name="국보 · 보물", orientation='h',
-            marker=dict(color='#008080'), 
-            # 텍스트에 비율(%) 표시
+            marker=dict(color='#E67E22'), # 시선을 끄는 오렌지/브라운 계열
             text=ratio_df["비율"].apply(lambda x: f'{x:.1f}%'),
             textposition='outside',
             hovertemplate='국보·보물: %{x}개<extra></extra>'
@@ -194,7 +193,7 @@ if df is not None:
             margin=dict(t=20, l=10, r=60, b=10),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             xaxis_title="문화유산 개수 (막대 끝 숫자는 국보·보물 비율)",
-            yaxis=dict(autorange="reversed") # 개수가 많은 지역이 위로 오도록
+            yaxis=dict(autorange="reversed") # 비율 높은 순서가 위로 오도록
         )
         st.plotly_chart(fig6, use_container_width=True)
 
