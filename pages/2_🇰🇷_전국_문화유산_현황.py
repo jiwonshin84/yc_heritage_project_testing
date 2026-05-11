@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import numpy as np
 
 # =================================================
 # 페이지 설정
@@ -32,7 +33,6 @@ st.divider()
 @st.cache_data
 def load_data():
     try:
-        # 데이터 파일 경로 (환경에 맞춰 수정하세요)
         df = pd.read_csv("data/raw/all_heritage.csv")
         df.columns = df.columns.str.strip()
         return df
@@ -142,55 +142,63 @@ if df is not None:
             type_ratio.columns = ["종목", "비율"]
             type_ratio["비율"] = type_ratio["비율"] * 100
 
-            fig7 = px.line_polar(type_ratio.head(8), r="비율", theta="종목", line_close=True)
-            fig7.update_traces(fill="toself", line_color="#008080")
-            fig7.update_layout(height=500, margin=dict(t=30, b=30))
-            st.plotly_chart(fig7, use_container_width=True)
+            # fig7 -> fig5로 변경
+            fig5 = px.line_polar(type_ratio.head(8), r="비율", theta="종목", line_close=True)
+            fig5.update_traces(fill="toself", line_color="#008080")
+            fig5.update_layout(height=500, margin=dict(t=30, b=30))
+            st.plotly_chart(fig5, use_container_width=True)
         else:
             st.warning("영천시 데이터가 존재하지 않습니다.")
 
     with row3_right:
-        st.markdown("### 👥 인구 대비 문화유산 밀도 (2025년 인구 데이터 반영)")
+        st.markdown("### 👥 인구 대비 문화유산 밀도 (2025년 KOSIS 국가통계포털 주민등록인구)")
         
         heritage_count = gb_df["시군구명"].value_counts().reset_index()
         heritage_count.columns = ["시군구명", "문화유산수"]
 
-        # KOSIS 국가통계포털 2025년 주민등록 인구 통계
+        # 2025년 인구 데이터 - KOSIS 국가통계포털 주민등록인구
         actual_pop_data = {
-            "시군구명": [
-                "포항시", "경주시", "김천시", "안동시", "구미시", "영주시", "영천시", "상주시", 
-                "문경시", "경산시", "의성군", "청송군", "영양군", "영덕군", "청도군", "고령군", 
-                "성주군", "칠곡군", "예천군", "봉화군", "울진군", "울릉군"
-            ],
-            "인구": [
-                488707, 244055, 133791, 152610, 403883, 97162, 95185, 89888, 
-                65348, 263853, 47902, 23363, 15941, 32698, 40117, 29667, 
-                40720, 104842, 53887, 28315, 45896, 8696
-            ]
+            "시군구명": ["포항시", "경주시", "김천시", "안동시", "구미시", "영주시", "영천시", "상주시", 
+                        "문경시", "경산시", "의성군", "청송군", "영양군", "영덕군", "청도군", "고령군", 
+                        "성주군", "칠곡군", "예천군", "봉화군", "울진군", "울릉군"],
+            "인구": [488707, 244055, 133791, 152610, 403883, 97162, 95185, 89888, 
+                    65348, 263853, 47902, 23363, 15941, 32698, 40117, 29667, 
+                    40720, 104842, 53887, 28315, 45896, 8696]
         }
         pop_df = pd.DataFrame(actual_pop_data)
-
-        # 데이터 병합
         density_df = pd.merge(heritage_count, pop_df, on="시군구명", how="inner")
-        
-        # 인구 1만명당 밀도 계산
         density_df["밀도"] = (density_df["문화유산수"] / density_df["인구"]) * 10000
 
-        fig8 = px.scatter(
-            density_df, x="인구", y="문화유산수", size="밀도", color="밀도",
-            hover_name="시군구명", text="시군구명", 
-            color_continuous_scale="Tealgrn",
-            labels={"인구": "2025년 인구 수", "문화유산수": "보유 문화유산 수", "밀도": "1만명당 밀도"}
+        # 영천시 강조를 위한 색상 및 라인 설정
+        # 영천시는 붉은색(#FF4B4B), 나머지는 청록색 계열
+        colors = ['#FF4B4B' if city == '영천시' else '#008080' for city in density_df['시군구명']]
+        
+        # fig8 -> fig6으로 변경
+        fig6 = go.Figure()
+
+        fig6.add_trace(go.Scatter(
+            x=density_df["인구"],
+            y=density_df["문화유산수"],
+            mode='markers+text',
+            marker=dict(
+                size=density_df["밀도"] * 1.5, # 밀도에 따른 크기 조절
+                color=colors,
+                opacity=0.7,
+                line=dict(width=2, color='White')
+            ),
+            text=density_df["시군구명"],
+            textposition="top center",
+            hovertemplate="<b>%{text}</b><br>인구: %{x}<br>보유수: %{y}<br>밀도: %{marker.size}<extra></extra>"
+        ))
+
+        fig6.update_layout(
+            height=500,
+            margin=dict(t=20, l=10, r=10, b=10),
+            xaxis_title="2025년 인구 수",
+            yaxis_title="문화유산 보유 수",
+            showlegend=False
         )
-        fig8.update_traces(textposition="top center")
-        fig8.update_layout(
-            height=500, 
-            margin=dict(t=20, l=10, r=10, b=10), 
-            coloraxis_showscale=True,
-            xaxis_title="인구 수 (2025년 계)",
-            yaxis_title="문화유산 보유 수"
-        )
-        st.plotly_chart(fig8, use_container_width=True)
+        st.plotly_chart(fig6, use_container_width=True)
 
     # =================================================
     # 하단 설명
@@ -199,5 +207,5 @@ if df is not None:
     st.info("""
     📌 **Treemap & Bubble**: 전국적인 분포와 종목별 비중을 직관적으로 보여줍니다.  
     📌 **Polar & Heatmap**: 경북 내 지역별 편차와 종목 구성을 상세히 분석합니다.  
-    📌 **Radar & Density**: 2025년 최신 인구 데이터를 바탕으로 인구 배경 대비 문화유산의 보존 밀도를 정확하게 시각화했습니다.
+    📌 **Radar(fig5) & Density(fig6)**: 영천시의 문화유산 종목 특징을 분석하고, 경북 내 인구 대비 밀도 현황에서 영천시의 위치를 붉은색으로 강조하였습니다.
     """)
