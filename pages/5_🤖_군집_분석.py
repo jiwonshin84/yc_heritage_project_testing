@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score, silhouette_samples
@@ -108,20 +109,53 @@ with col_left:
     st.plotly_chart(fig_scatter, use_container_width=True)
 
 with col_right:
-    st.subheader("📊 군집별 특성 요약")
-    summary = df_base.groupby("cluster").agg({
-        "가치점수": "mean", "시대점수": "mean", "문화재명(국문)": "count"
-    }).rename(columns={"문화재명(국문)": "개수"}).reset_index()
+    st.subheader("📊 군집별 다차원 특성 (Radar)")
     
+    # 군집별 통계 요약
+    summary = df_base.groupby("cluster").agg({
+        "가치점수": "mean", 
+        "시대점수": "mean", 
+        "문화재명(국문)": "count"
+    }).rename(columns={"문화재명(국문)": "유산수"}).reset_index()
+    
+    # 정렬
     summary['cluster_int'] = summary['cluster'].astype(int)
     summary = summary.sort_values('cluster_int')
 
-    fig_bar = px.bar(
-        summary, x="cluster", y=["가치점수", "시대점수"], barmode="group",
-        template="plotly_white", color_discrete_map={"가치점수": "#636EFA", "시대점수": "#EF553B"},
-        labels={"value": "평균 점수", "variable": "지표", "cluster": "군집"}
+    # 방사형 차트 생성
+    fig_radar = go.Figure()
+
+    # 축 설정 (가치, 시대, 유산수 비중)
+    # 유산수는 다른 점수와 단위를 맞추기 위해 (해당군집수 / 최대군집수 * 10)으로 보정
+    max_count = summary['유산수'].max()
+
+    for i, row in summary.iterrows():
+        fig_radar.add_trace(go.Scatterpolar(
+            r=[
+                row['가치점수'], 
+                row['시대점수'], 
+                (row['유산수'] / max_count * 10), # 규모를 10점 만점 척도로 환산
+                row['가치점수'] # 루프 닫기
+            ],
+            theta=['평균 가치', '평균 시대', '군집 규모(상대)', '평균 가치'],
+            fill='toself',
+            name=f"군집 {row['cluster']}"
+        ))
+
+    fig_radar.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 15] # 시대점수 최대치가 15이므로 범위 설정
+            )
+        ),
+        showlegend=True,
+        template="plotly_white",
+        margin=dict(l=40, r=40, t=40, b=40)
     )
-    st.plotly_chart(fig_bar, use_container_width=True)
+    
+    st.plotly_chart(fig_radar, use_container_width=True)
+    st.caption("※ 군집 규모는 가장 많은 유산을 가진 군집을 기준으로 상대적 크기(10점 만점 척도)를 나타냅니다.")
 
 # =================================================
 # 하단: 군집별 상세 목록
