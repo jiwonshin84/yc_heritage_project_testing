@@ -574,7 +574,86 @@ with right2:
         fig5,
         use_container_width=True
     )
+# =================================================
+# 경북 지역 국보 / 보물 비율
+# fig6
+# =================================================
 
+with left3:
+
+    st.markdown("""
+    <h3 style="
+    font-size:24px;
+    margin-bottom:10px;
+    ">
+    🏺 경북 지역 국보 · 보물 비율
+    </h3>
+    """, unsafe_allow_html=True)
+
+    # -------------------------------------------------
+    # 국보 / 보물 데이터 추출
+    # -------------------------------------------------
+
+    treasure_df = gb_df[
+        gb_df["국가유산종목"].isin(["국보", "보물"])
+    ].copy()
+
+    type_count = (
+
+        treasure_df["국가유산종목"]
+        .value_counts()
+        .reset_index()
+
+    )
+
+    type_count.columns = [
+        "종목",
+        "개수"
+    ]
+
+    # -------------------------------------------------
+    # Pie Chart
+    # -------------------------------------------------
+
+    fig6 = px.pie(
+
+        type_count,
+
+        names="종목",
+
+        values="개수",
+
+        hole=0.45
+
+    )
+
+    fig6.update_traces(
+
+        textinfo="percent+label",
+
+        pull=[0.03, 0]
+
+    )
+
+    fig6.update_layout(
+
+        height=500,
+
+        margin=dict(
+            t=20,
+            l=10,
+            r=10,
+            b=10
+        ),
+
+        showlegend=False
+
+    )
+
+    st.plotly_chart(
+        fig6,
+        use_container_width=True
+    )
 
 # =================================================
 # 하단 설명
