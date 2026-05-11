@@ -20,7 +20,7 @@ st.markdown("""
 🇰🇷 전국 문화유산 현황
 </h1>
 <div style="font-size:17px; color:#6b7280; margin-bottom:20px;">
-국가유산 공공데이터를 활용한 전국 문화유산 분포 시각화
+국가유산 공공데이터와 2025년 최신 인구 통계를 활용한 시각화
 </div>
 """, unsafe_allow_html=True)
 
@@ -32,7 +32,7 @@ st.divider()
 @st.cache_data
 def load_data():
     try:
-        # 데이터 파일 경로 (사용자 환경에 맞게 조정)
+        # 데이터 파일 경로 (환경에 맞춰 수정하세요)
         df = pd.read_csv("data/raw/all_heritage.csv")
         df.columns = df.columns.str.strip()
         return df
@@ -150,25 +150,46 @@ if df is not None:
             st.warning("영천시 데이터가 존재하지 않습니다.")
 
     with row3_right:
-        st.markdown("### 👥 인구 대비 문화유산 밀도 (경북 주요 시군)")
+        st.markdown("### 👥 인구 대비 문화유산 밀도 (2025년 인구 데이터 반영)")
+        
         heritage_count = gb_df["시군구명"].value_counts().reset_index()
         heritage_count.columns = ["시군구명", "문화유산수"]
 
-        # 인구 데이터 (가상/통계 데이터)
-        pop_df = pd.DataFrame({
-            "시군구명": ["경주시","안동시","영천시","포항시","구미시","문경시","영주시","상주시"],
-            "인구": [250000, 155000, 101000, 500000, 410000, 70000, 100000, 93000]
-        })
+        # KOSIS 국가통계포털 2025년 주민등록 인구 통계
+        actual_pop_data = {
+            "시군구명": [
+                "포항시", "경주시", "김천시", "안동시", "구미시", "영주시", "영천시", "상주시", 
+                "문경시", "경산시", "의성군", "청송군", "영양군", "영덕군", "청도군", "고령군", 
+                "성주군", "칠곡군", "예천군", "봉화군", "울진군", "울릉군"
+            ],
+            "인구": [
+                488707, 244055, 133791, 152610, 403883, 97162, 95185, 89888, 
+                65348, 263853, 47902, 23363, 15941, 32698, 40117, 29667, 
+                40720, 104842, 53887, 28315, 45896, 8696
+            ]
+        }
+        pop_df = pd.DataFrame(actual_pop_data)
 
+        # 데이터 병합
         density_df = pd.merge(heritage_count, pop_df, on="시군구명", how="inner")
+        
+        # 인구 1만명당 밀도 계산
         density_df["밀도"] = (density_df["문화유산수"] / density_df["인구"]) * 10000
 
         fig8 = px.scatter(
             density_df, x="인구", y="문화유산수", size="밀도", color="밀도",
-            hover_name="시군구명", text="시군구명", color_continuous_scale="Tealgrn"
+            hover_name="시군구명", text="시군구명", 
+            color_continuous_scale="Tealgrn",
+            labels={"인구": "2025년 인구 수", "문화유산수": "보유 문화유산 수", "밀도": "1만명당 밀도"}
         )
         fig8.update_traces(textposition="top center")
-        fig8.update_layout(height=500, margin=dict(t=20, l=10, r=10, b=10), coloraxis_showscale=False)
+        fig8.update_layout(
+            height=500, 
+            margin=dict(t=20, l=10, r=10, b=10), 
+            coloraxis_showscale=True,
+            xaxis_title="인구 수 (2025년 계)",
+            yaxis_title="문화유산 보유 수"
+        )
         st.plotly_chart(fig8, use_container_width=True)
 
     # =================================================
@@ -178,5 +199,5 @@ if df is not None:
     st.info("""
     📌 **Treemap & Bubble**: 전국적인 분포와 종목별 비중을 직관적으로 보여줍니다.  
     📌 **Polar & Heatmap**: 경북 내 지역별 편차와 종목 구성을 상세히 분석합니다.  
-    📌 **Radar & Density**: 특정 지역(영천시)의 전문성과 인구 배경 대비 유산 보존량을 다각도로 시각화합니다.
+    📌 **Radar & Density**: 2025년 최신 인구 데이터를 바탕으로 인구 배경 대비 문화유산의 보존 밀도를 정확하게 시각화했습니다.
     """)
