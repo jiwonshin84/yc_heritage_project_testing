@@ -355,6 +355,8 @@ with left2:
 
         color_continuous_scale="Tealgrn"
 
+        text="개수"
+
     )
 
     fig3.update_layout(
