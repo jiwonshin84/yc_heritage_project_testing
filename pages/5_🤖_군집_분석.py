@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import numpy as np
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score, silhouette_samples
 
 # =================================================
 # 페이지 설정
@@ -12,56 +14,59 @@ st.set_page_config(
 )
 
 st.title("🤖 국가유산 지능형 군집분석 시스템")
-st.markdown("영천시의 국가유산 105건에 대한 데이터 기반 그룹화 분석 결과입니다.")
+st.markdown("영천시 국가유산 105건의 **가치/시대/위치** 데이터를 바탕으로 실시간 군집화를 수행합니다.")
 st.divider()
 
 # =================================================
 # 데이터 로드 및 전처리
 # =================================================
 @st.cache_data
-def load_cluster_data():
-    # 파일 경로를 확인하세요
+def load_base_data():
+    # 가치점수와 시대점수가 포함된 데이터를 로드합니다.
     df = pd.read_csv("data/processed/yc_clustering.csv")
-    
-    # 실루엣 계수가 없는 경우를 대비한 안전 장치 (실제 데이터에 있으면 자동 반영)
-    if 'silhouette' not in df.columns:
-        df['silhouette'] = np.random.uniform(0.4, 0.7, size=len(df))
-    
-    # 군집 번호를 문자열로 변환 (범주형 시각화를 위함)
-    df["cluster"] = df["cluster"].astype(str)
+    # 필요한 컬럼만 추출 및 결측치 제거
+    df = df.dropna(subset=['위도', '경도', '가치점수', '시대점수'])
     return df
 
-df = load_cluster_data()
-TOTAL_COUNT = 105 # 분석 대상 전수
+df_base = load_base_data()
 
 # =================================================
-# 사이드바 설정
+# 사이드바 설정 (실시간 분석 엔진 제어)
 # =================================================
-st.sidebar.header("⚙️ 분석 설정")
-# 데이터에 존재하는 실제 군집들을 확인
-available_clusters = sorted(df['cluster'].unique(), key=int)
-max_k = len(available_clusters)
+st.sidebar.header("⚙️ 분석 엔진 설정")
+st.sidebar.write("군집 수(k)를 변경하면 AI가 데이터를 재학습합니다.")
 
-st.sidebar.write(f"현재 데이터는 총 **{max_k}개**의 군집으로 최적화되어 있습니다.")
-
-# (참고) 실제 실시간 clustering을 하려면 여기서 KMeans를 돌려야 하지만, 
-# 현재는 로드된 분석 결과를 전수로 보여주는 데 집중합니다.
-num_clusters = st.sidebar.slider("시각화 군집 범위", min_value=1, max_value=max_k, value=max_k)
+# 사용자가 직접 k값을 결정
+k_value = st.sidebar.slider("군집 수(k) 설정", min_value=2, max_value=10, value=3)
 
 # =================================================
-# 상단 요약 지표 (Metrics) - 항상 105건 유지
+# 실시간 K-Means 분석 수행
 # =================================================
-avg_silhouette = df['silhouette'].mean()
+# 분석에 사용할 특성(Features) 선택
+features = df_base[['위도', '경도', '가치점수', '시대점수']]
 
+# K-Means 모델 학습
+kmeans = KMeans(n_clusters=k_value, init='k-means++', random_state=42, n_init=10)
+df_base['cluster'] = kmeans.fit_predict(features).astype(str)
+
+# 실시간 실루엣 계수 계산
+sil_avg = silhouette_score(features, df_base['cluster'])
+df_base['silhouette'] = silhouette_samples(features, df_base['cluster'])
+
+# =================================================
+# 상단 요약 지표 (Metrics)
+# =================================================
 c1, c2, c3, c4 = st.columns(4)
 with c1:
-    st.metric("전체 분석 대상", f"{len(df)}건") # 필터링 없이 항상 전수 표시
+    st.metric("분석 대상 전수", f"{len(df_base)}건")
 with c2:
-    st.metric("식별된 군집 수", f"{max_k}개")
+    st.metric("현재 설정된 k", f"{k_value}개")
 with c3:
-    st.metric("평균 가치점수", f"{df['가치점수'].mean():.2f}")
+    st.metric("평균 가치점수", f"{df_base['가치점수'].mean():.2f}")
 with c4:
-    st.metric("평균 실루엣 계수", f"{avg_silhouette:.3f}")
+    # 점수에 따른 상태 메시지 추가
+    status = "양호" if sil_avg > 0.5 else "보통"
+    st.metric("실시간 실루엣 계수", f"{sil_avg:.3f}", delta=status)
 
 st.divider()
 
@@ -71,27 +76,26 @@ st.divider()
 col_left, col_right = st.columns([1.2, 1])
 
 with col_left:
-    st.subheader("📍 공간적 군집 분포")
-    # 전체 105건을 항상 보여주되, 선택한 군집 범위에 따라 색상을 강조할 수 있음
+    st.subheader(f"📍 공간적 군집 분포 (k={k_value})")
     fig_scatter = px.scatter(
-        df,
+        df_base,
         x="경도",
         y="위도",
         color="cluster",
         size="가치점수",
-        hover_data=["문화재명(국문)", "국가유산종목", "silhouette"],
+        hover_data=["문화재명(국문)", "국가유산종목", "시대"],
         color_discrete_sequence=px.colors.qualitative.Bold,
         template="plotly_white",
-        category_orders={"cluster": available_clusters}
+        category_orders={"cluster": [str(i) for i in range(k_value)]}
     )
     fig_scatter.update_layout(legend_title_text='군집 번호')
     st.plotly_chart(fig_scatter, use_container_width=True)
 
 with col_right:
-    st.subheader("📊 군집별 품질 지표")
+    st.subheader("📊 군집별 데이터 리포트")
     
     # 군집별 통계 계산
-    summary = df.groupby("cluster").agg({
+    summary = df_base.groupby("cluster").agg({
         "가치점수": "mean",
         "시대점수": "mean",
         "silhouette": "mean",
@@ -118,7 +122,8 @@ with col_right:
             x="cluster",
             y="silhouette",
             color="silhouette",
-            color_continuous_scale="Viridis",
+            color_continuous_scale="RdYlGn",
+            range_color=[0, 1],
             template="plotly_white"
         )
         st.plotly_chart(fig_sil, use_container_width=True)
@@ -127,11 +132,13 @@ with col_right:
 # 하단 설명 및 상세 테이블
 # =================================================
 st.divider()
-with st.expander("📝 군집별 상세 데이터 (105건 전수)", expanded=False):
-    st.dataframe(df[["cluster", "문화재명(국문)", "국가유산종목", "시대", "가치점수", "시대점수", "silhouette"]], 
-                 use_container_width=True)
+with st.expander(f"📝 {k_value}개 군집 상세 데이터 확인 (105건 전수)", expanded=False):
+    st.dataframe(
+        df_base[["cluster", "문화재명(국문)", "국가유산종목", "시대", "가치점수", "시대점수", "silhouette"]].sort_values("cluster"),
+        use_container_width=True
+    )
 
 st.info(f"""
-**분석 결과 요약:** 영천시의 105개 국가유산은 지리적 위치와 역사적 가치에 따라 총 {max_k}개의 군집으로 분류되었습니다. 
-모든 유산은 누락 없이 분석에 포함되어 있으며, 실루엣 계수를 통해 각 그룹이 얼마나 통계적으로 유의미하게 묶였는지 확인할 수 있습니다.
+**AI 분석 리포트:** 사용자가 설정한 {k_value}개의 그룹으로 105건의 국가유산을 재분류했습니다. 
+가장 높은 실루엣 계수를 기록하는 k값을 찾으면 영천시 국가유산의 가장 객관적인 관리 그룹을 도출할 수 있습니다.
 """)
