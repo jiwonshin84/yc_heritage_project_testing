@@ -142,7 +142,7 @@ if df is not None:
             type_ratio.columns = ["종목", "비율"]
             type_ratio["비율"] = type_ratio["비율"] * 100
 
-            # fig7 -> fig5로 변경
+            
             fig5 = px.line_polar(type_ratio.head(8), r="비율", theta="종목", line_close=True)
             fig5.update_traces(fill="toself", line_color="#008080")
             fig5.update_layout(height=500, margin=dict(t=30, b=30))
@@ -173,7 +173,7 @@ if df is not None:
         # 영천시는 붉은색(#FF4B4B), 나머지는 청록색 계열
         colors = ['#FF4B4B' if city == '영천시' else '#008080' for city in density_df['시군구명']]
         
-        # fig8 -> fig6으로 변경
+        
         fig6 = go.Figure()
 
         fig6.add_trace(go.Scatter(
@@ -181,7 +181,7 @@ if df is not None:
             y=density_df["문화유산수"],
             mode='markers+text',
             marker=dict(
-                size=density_df["밀도"] * 1.5, # 밀도에 따른 크기 조절
+                size=density_df["밀도"] * 1.5, 
                 color=colors,
                 opacity=0.7,
                 line=dict(width=2, color='White')
@@ -201,7 +201,7 @@ if df is not None:
         st.plotly_chart(fig6, use_container_width=True)
 
     # =================================================
-    # 하단 설명 (들여쓰기 및 줄바꿈 최적화)
+    # 하단 설명
     # =================================================
     st.divider()
     
