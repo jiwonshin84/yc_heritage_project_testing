@@ -128,4 +128,40 @@ with col_a:
 with col_h:
     st.markdown(f"""<div style="{card_style}"><h4>📊 분석 현황</h4><hr>
     <b>분석 대상:</b> {len(df_base)}개<br><b>관리 지구:</b> {k_val}개 구역<br>
-    <br><span style='color:red;'>⚠️ 고위험 예측: 18개</span></div>""", unsafe_allow_html
+    <br><span style='color:red;'>⚠️ 고위험 예측: 18개</span></div>""", unsafe_allow_html=True)
+
+# ==========================================================
+# 6. UI 렌더링 - 중단 분석 그래프
+# ==========================================================
+st.subheader("📍 공간 중심 위험관리 지구 분포")
+c_map, c_radar = st.columns([1.2, 1])
+
+with c_map:
+    fig_map = px.scatter(df_base, x="경도", y="위도", color="cluster", size="가치점수",
+                         hover_data=["문화재명(국문)"], template="plotly_white",
+                         color_discrete_sequence=px.colors.qualitative.Bold)
+    st.plotly_chart(fig_map, use_container_width=True)
+
+with c_radar:
+    summary = df_base.groupby("cluster").agg({"가치점수":"mean", "시대점수":"mean", "문화재명(국문)":"count"}).reset_index()
+    fig_radar = go.Figure()
+    for i, row in summary.iterrows():
+        fig_radar.add_trace(go.Scatterpolar(
+            r=[row['가치점수'], row['시대점수'], (row['문화재명(국문)']/summary['문화재명(국문)'].max()*10), row['가치점수']],
+            theta=['가치', '시대', '규모', '가치'], fill='toself', name=f"지구 {row['cluster']}"
+        ))
+    fig_radar.update_layout(polar=dict(radialaxis=dict(visible=True, range=[0, 15])), template="plotly_white")
+    st.plotly_chart(fig_radar, use_container_width=True)
+
+# ==========================================================
+# 7. 하단 상세 리스트
+# ==========================================================
+st.divider()
+tabs = st.tabs([f"🚩 관리지구 {i}" for i in range(1, k_val+1)])
+for i, tab in enumerate(tabs):
+    with tab:
+        c_df = df_base[df_base['cluster'] == str(i+1)]
+        st.markdown(f"**지구 평균 가치:** {c_df['가치점수'].mean():.2f} | **대상 수:** {len(c_df)}건")
+        st.dataframe(c_df[["문화재명(국문)", "국가유산종목", "시대", "소재지상세"]], use_container_width=True, hide_index=True)
+
+st.caption("제6회 학생 SW·AI 인재양성 프로젝트 | 선화여고 - 영천 헤리티지 AI 탐구단")
