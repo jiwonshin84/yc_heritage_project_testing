@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import google.generativeai as genai
+import streamlit.components.v1 as components
 
 # =====================================================
 # 1. 페이지 및 보안 설정
@@ -22,16 +23,34 @@ else:
 # =====================================================
 # 2. 세션 상태(Session State) 초기화
 # =====================================================
-# 해설 내용과 답변 내용을 저장할 공간을 만듭니다.
 if "docent_explanation" not in st.session_state:
     st.session_state.docent_explanation = ""
 if "ai_answer" not in st.session_state:
     st.session_state.ai_answer = ""
 if "last_heritage" not in st.session_state:
     st.session_state.last_heritage = ""
+if "should_speak" not in st.session_state:
+    st.session_state.should_speak = False
 
 # =====================================================
-# 3. 데이터 처리 함수
+# 3. 음성 출력용 JavaScript 함수
+# =====================================================
+def speak_text(text):
+    """브라우저의 TTS 엔진을 사용하여 텍스트를 읽어주는 JS 코드를 삽입합니다."""
+    # 텍스트 내 줄바꿈이나 특수문자 처리
+    js_text = text.replace("'", "\\'").replace("\n", " ")
+    tts_script = f"""
+        <script>
+            var msg = new SpeechSynthesisUtterance('{js_text}');
+            msg.lang = 'ko-KR';
+            msg.rate = 1.0;
+            window.speechSynthesis.speak(msg);
+        </script>
+    """
+    components.html(tts_script, height=0)
+
+# =====================================================
+# 4. 데이터 처리 함수
 # =====================================================
 @st.cache_data
 def load_data():
@@ -43,7 +62,7 @@ def clean(val):
     return str(val).strip()
 
 # =====================================================
-# 4. 메인 UI 렌더링
+# 5. 메인 UI 렌더링
 # =====================================================
 try:
     df = load_data()
@@ -63,11 +82,11 @@ try:
     with col_sel2:
         heritage = st.selectbox("🏛 문화재 선택", filtered_df["문화재명(국문)"])
 
-    # 만약 다른 문화재를 선택하면 이전 해설/답변 기록을 초기화합니다.
     if st.session_state.last_heritage != heritage:
         st.session_state.docent_explanation = ""
         st.session_state.ai_answer = ""
         st.session_state.last_heritage = heritage
+        st.session_state.should_speak = False
 
     row = filtered_df[filtered_df["문화재명(국문)"] == heritage].iloc[0]
 
@@ -91,7 +110,6 @@ try:
 
     with right_col:
         st.markdown("<h3 style='margin-top:0; color:#2c3e50;'>📋 상세 정보</h3>", unsafe_allow_html=True)
-        
         st.markdown(f"""
             <style>
                 .info-table {{ width: 100%; border-collapse: collapse; margin-top: 10px; border: 1px solid #f0f0f0; }}
@@ -121,26 +139,26 @@ try:
     
     with col_ai1:
         if st.button("✨ AI 도슨트 해설 생성"):
-            with st.spinner("해설을 작성 중입니다..."):
-                prompt = f"당신은 영천 문화재 도슨트입니다. '{heritage}'를 친절하게 설명해주세요. 자료: {clean(row.get('내용'))}"
+            with st.spinner("AI 해설사가 원고를 작성하고 음성을 준비 중입니다..."):
+                prompt = f"당신은 영천 문화재 도슨트입니다. '{heritage}'를 역사적 배경과 특징을 중심으로 친절하게 설명해주세요. 3~4문장 정도로 핵심만 말해주세요. 자료: {clean(row.get('내용'))}"
                 response = model.generate_content(prompt)
-                # 세션 상태에 저장
                 st.session_state.docent_explanation = response.text
+                st.session_state.should_speak = True # 음성 출력 플래그 설정
         
-        # 저장된 해설이 있으면 항상 표시
         if st.session_state.docent_explanation:
             st.info(st.session_state.docent_explanation)
+            if st.session_state.should_speak:
+                speak_text(st.session_state.docent_explanation)
+                st.session_state.should_speak = False # 한 번 읽으면 플래그 초기화
                 
     with col_ai2:
-        user_q = st.text_input("💬 궁금한 점을 질문해 보세요.")
+        user_q = st.text_input("💬 질문하기")
         if st.button("질문 전송"):
             if user_q:
                 with st.spinner("답변 생성 중..."):
-                    res = model.generate_content(f"{heritage}에 대한 질문: {user_q}\n자료: {clean(row.get('내용'))}")
-                    # 세션 상태에 저장
+                    res = model.generate_content(f"{heritage} 질문: {user_q}\n내용: {clean(row.get('내용'))}")
                     st.session_state.ai_answer = res.text
         
-        # 저장된 답변이 있으면 항상 표시
         if st.session_state.ai_answer:
             st.success(st.session_state.ai_answer)
 
