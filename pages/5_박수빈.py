@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import os
 
 import matplotlib
 matplotlib.use("Agg")
@@ -51,11 +52,34 @@ st.markdown("""
 @st.cache_data
 def load_data():
 
-    df = pd.read_csv("data/yc_heritage_feature.csv")
+    BASE_DIR = os.path.dirname(
+        os.path.dirname(__file__)
+    )
+
+    file_path = os.path.join(
+        BASE_DIR,
+        "data",
+        "processed",
+        "yc_heritage_feature.csv"
+    )
+
+    df = pd.read_csv(file_path)
 
     return df
 
-df = load_data()
+# ---------------------------------------------------
+# 데이터 로드
+# ---------------------------------------------------
+
+try:
+
+    df = load_data()
+
+except Exception as e:
+
+    st.error(f"데이터 로드 오류: {e}")
+
+    st.stop()
 
 # ---------------------------------------------------
 # 데이터 미리보기
@@ -82,7 +106,7 @@ st.subheader("📌 숫자형 컬럼")
 st.write(numeric_cols)
 
 # ---------------------------------------------------
-# 숫자형 컬럼 체크
+# 숫자형 컬럼 부족 체크
 # ---------------------------------------------------
 
 if len(numeric_cols) < 5:
@@ -97,7 +121,7 @@ if len(numeric_cols) < 5:
 
 selected_features = numeric_cols[:5]
 
-st.subheader("✅ 위험도 계산 컬럼")
+st.subheader("✅ 위험도 계산에 사용된 컬럼")
 
 st.write(selected_features)
 
@@ -158,7 +182,7 @@ def classify_risk(score):
 df["risk_label"] = df["risk_score"].apply(classify_risk)
 
 # ---------------------------------------------------
-# 위험도 데이터 출력
+# 위험도 결과 출력
 # ---------------------------------------------------
 
 st.subheader("⚠ 위험도 결과")
@@ -411,7 +435,7 @@ cm = confusion_matrix(y_test, pred_rf)
 
 fig5, ax5 = plt.subplots(figsize=(5, 5))
 
-im = ax5.imshow(cm)
+ax5.imshow(cm)
 
 ax5.set_title("Random Forest Confusion Matrix")
 
@@ -420,6 +444,7 @@ ax5.set_xlabel("Predicted")
 ax5.set_ylabel("Actual")
 
 for i in range(len(cm)):
+
     for j in range(len(cm)):
 
         ax5.text(
