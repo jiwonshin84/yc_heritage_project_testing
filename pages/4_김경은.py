@@ -163,14 +163,14 @@ for _, row in df.iterrows():
     ).add_to(m)
 
 st_folium(m, width=900, height=600)
-st.subheader(f"📋 {selected_group} 문화재 목록")
+st.subheader("📋 전체 문화재 목록")
 
 st.dataframe(
-    group_df[
+    df[
         [
             "문화재명(국문)",
+            "군집",
             "문화재연령",
-            "국가유산종목",
             "재질",
             "노출형태"
         ]
