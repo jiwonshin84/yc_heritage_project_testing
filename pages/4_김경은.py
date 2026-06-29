@@ -106,18 +106,30 @@ st.dataframe(exposure, use_container_width=True)
 st.bar_chart(exposure)
 
 
-st.subheader("📋 군집별 특징")
+st.subheader("📌 군집별 특징")
 
-for group in sorted(df["군집"].unique()):
+groups = sorted(df["군집"].unique())
+
+col1, col2 = st.columns(2)
+
+for i, group in enumerate(groups):
 
     temp = df[df["군집"] == group]
 
-    st.markdown(f"### {group}")
+    with col1 if i % 2 == 0 else col2:
 
-    st.write(f"문화재 수 : {len(temp)}개")
-    st.write(f"평균 문화재 연령 : {round(temp['문화재연령'].mean(), 1)}년")
-    st.write(f"대표 재질 : {temp['재질'].mode()[0]}")
-    st.write(f"대표 노출 형태 : {temp['노출형태'].mode()[0]}")
+        st.metric(
+            label=f"{group}",
+            value=f"{len(temp)}개"
+        )
+
+        st.write(f"📅 평균 연령 : **{round(temp['문화재연령'].mean(),1)}년**")
+
+        st.write(f"🪨 대표 재질 : **{temp['재질'].mode()[0]}**")
+
+        st.write(f"🏞 대표 노출 형태 : **{temp['노출형태'].mode()[0]}**")
+
+        st.divider()
 
 st.subheader("📋 문화재 목록")
 
