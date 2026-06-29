@@ -33,16 +33,7 @@ popular = [
     "청제비"
 ]
 
-st.subheader("⭐ 많이 찾는 문화재")
 
-cols = st.columns(len(popular))
-
-selected = None
-
-for i, name in enumerate(popular):
-    with cols[i]:
-        if st.button(name):
-            selected = name
 
 # -------------------------------
 # 검색
