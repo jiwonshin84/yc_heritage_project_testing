@@ -21,23 +21,25 @@ st.title("🤖 AI 문화재 해설")
 
 st.write("문화재 이름을 검색하거나 많이 찾는 문화재를 선택해 보세요.")
 
-# -------------------------------
-# 검색
-# -------------------------------
+    "문화재 이름을 입력하세요.",
+    placeholder="예) 은해사"
 
-search = st.text_input(
-    "🔍 문화재 검색",
-    placeholder="문화재 이름을 입력하세요."
-)
 
 heritage_list = sorted(df["문화재명(국문)"].dropna().unique())
 
 if search:
+    heritage_list = [h for h in heritage_list if search in h]
 
-    heritage_list = [
-        h for h in heritage_list
-        if search in h
-    ]
+if len(heritage_list) == 0:
+    st.warning("검색 결과가 없습니다.")
+    st.stop()
+
+heritage = heritage_list[0]
+
+if len(heritage_list) > 1:
+    st.info(f"'{search}' 검색 결과 {len(heritage_list)}건이 있습니다. 첫 번째 결과를 표시합니다.")
+
+info = df[df["문화재명(국문)"] == heritage].iloc[0]
 
 # -------------------------------
 # 많이 찾는 문화재
