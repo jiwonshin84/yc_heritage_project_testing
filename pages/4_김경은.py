@@ -88,18 +88,23 @@ cluster_age = df.groupby("군집")["문화재연령"].mean()
 st.bar_chart(cluster_age)
 
 
-st.subheader("🪨 문화재 재질 분포")
+st.subheader("🪨 군집별 재질")
 
-material_count = df["재질"].value_counts()
+material = pd.crosstab(df["군집"], df["재질"])
 
-st.bar_chart(material_count)
+st.dataframe(material, use_container_width=True)
+
+st.bar_chart(material)
 
 
-st.subheader("🏞 노출 형태 분포")
+st.subheader("🏞 군집별 노출 형태")
 
-exposure_count = df["노출형태"].value_counts()
+exposure = pd.crosstab(df["군집"], df["노출형태"])
 
-st.bar_chart(exposure_count)
+st.dataframe(exposure, use_container_width=True)
+
+st.bar_chart(exposure)
+
 
 st.subheader("📋 군집별 특징")
 
