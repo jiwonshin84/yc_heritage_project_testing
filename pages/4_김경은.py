@@ -3,7 +3,8 @@ import streamlit as st
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.cluster import KMeans
-
+import folium
+from streamlit_folium import st_folium
 st.set_page_config(page_title="문화재 군집분석", layout="wide")
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -131,26 +132,37 @@ for i, group in enumerate(groups):
 
         st.divider()
 
-st.subheader("🗺️ 군집별 문화재 위치")
+st.subheader("🗺️ 문화재 위치")
 
-selected_group = st.selectbox(
-    "군집 선택",
-    sorted(df["군집"].unique())
+m = folium.Map(
+    location=[df["위도"].mean(), df["경도"].mean()],
+    zoom_start=11
 )
 
-group_df = df[df["군집"] == selected_group]
+color_dict = {
+    "A그룹": "blue",
+    "B그룹": "green",
+    "C그룹": "orange",
+    "D그룹": "red"
+}
 
-st.write(f"**{selected_group}에 속하는 문화재 위치**")
+for _, row in df.iterrows():
 
-st.map(
-    group_df.rename(
-        columns={
-            "위도": "lat",
-            "경도": "lon"
-        }
-    )[["lat", "lon"]]
-)
+    folium.Marker(
+        location=[row["위도"], row["경도"]],
+        popup=f"""
+        <b>{row['문화재명(국문)']}</b><br>
+        군집 : {row['군집']}<br>
+        재질 : {row['재질']}<br>
+        노출 형태 : {row['노출형태']}
+        """,
+        icon=folium.Icon(
+            color=color_dict[row["군집"]],
+            icon="info-sign"
+        )
+    ).add_to(m)
 
+st_folium(m, width=900, height=600)
 st.subheader(f"📋 {selected_group} 문화재 목록")
 
 st.dataframe(
