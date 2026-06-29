@@ -34,28 +34,42 @@ for col in ["국가유산종목", "시대그룹", "재질", "노출형태"]:
 scaler = StandardScaler()
 X = scaler.fit_transform(data)
 
-kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
+kmeans = KMeans(
+    n_clusters=4,
+    random_state=42,
+    n_init=10
+)
 
 df["Cluster"] = kmeans.fit_predict(X)
 
 cluster_name = {
     0: "A그룹",
     1: "B그룹",
-    2: "C그룹"
+    2: "C그룹",
+    3: "D그룹"
 }
 
 df["군집"] = df["Cluster"].map(cluster_name)
 
 st.title("🏛 문화재 군집분석")
 
-st.write("""
-문화재를 연령, 시대, 재질, 노출 형태를 기준으로 분석하여
-비슷한 특징을 가진 문화재끼리 자동으로 그룹화한 결과입니다.
+st.markdown("""
+### 📌 군집 기준
+
+문화재를 **연령, 국가유산종목, 시대, 재질, 노출 형태**를 기준으로
+비슷한 특성을 가진 문화재끼리 자동으로 분류했습니다.
+
+- 🟦 A그룹 : 비슷한 특징을 가진 문화재 그룹
+- 🟩 B그룹 : 비슷한 특징을 가진 문화재 그룹
+- 🟨 C그룹 : 비슷한 특징을 가진 문화재 그룹
+- 🟥 D그룹 : 비슷한 특징을 가진 문화재 그룹
+
+아래에서 각 군집의 특징과 문화재 목록을 확인할 수 있습니다.
 """)
 
 st.subheader("📊 군집별 문화재 개수")
 
-cluster_count = df["군집"].value_counts()
+cluster_count = df["군집"].value_counts().sort_index()
 
 st.bar_chart(cluster_count)
 
@@ -65,24 +79,7 @@ cluster_age = df.groupby("군집")["문화재연령"].mean()
 
 st.bar_chart(cluster_age)
 
-st.subheader("📋 문화재 분류 결과")
-
-st.dataframe(
-    df[
-        [
-            "문화재명(국문)",
-            "문화재연령",
-            "국가유산종목",
-            "시대그룹",
-            "재질",
-            "노출형태",
-            "군집"
-        ]
-    ],
-    use_container_width=True
-)
-
-st.subheader("📌 군집별 특징")
+st.subheader("📋 군집별 특징")
 
 for group in sorted(df["군집"].unique()):
 
@@ -90,15 +87,12 @@ for group in sorted(df["군집"].unique()):
 
     st.markdown(f"### {group}")
 
-    st.write(f"• 문화재 수 : {len(temp)}개")
+    st.write(f"문화재 수 : {len(temp)}개")
+    st.write(f"평균 문화재 연령 : {round(temp['문화재연령'].mean(),1)}년")
+    st.write(f"대표 재질 : {temp['재질'].mode()[0]}")
+    st.write(f"대표 노출 형태 : {temp['노출형태'].mode()[0]}")
 
-    st.write(f"• 평균 문화재 연령 : {round(temp['문화재연령'].mean(),1)}년")
-
-    st.write(f"• 가장 많은 재질 : {temp['재질'].mode()[0]}")
-
-    st.write(f"• 가장 많은 노출 형태 : {temp['노출형태'].mode()[0]}")
-
-st.subheader("📄 군집별 문화재 목록")
+st.subheader("🔍 군집별 문화재 검색")
 
 group = st.selectbox(
     "군집 선택",
@@ -110,6 +104,8 @@ st.dataframe(
         [
             "문화재명(국문)",
             "문화재연령",
+            "국가유산종목",
+            "시대그룹",
             "재질",
             "노출형태"
         ]
