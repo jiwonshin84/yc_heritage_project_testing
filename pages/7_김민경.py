@@ -43,19 +43,20 @@ st.subheader("🔍 문화재 검색")
 
 heritage_list = sorted(df["문화재명(국문)"].dropna().unique())
 
-if selected is not None:
+default_index = None
 
+if st.session_state.selected_heritage is not None:
     for h in heritage_list:
-        if selected in h:
-            default = h
+        if st.session_state.selected_heritage in h:
+            default_index = heritage_list.index(h)
             break
-    else:
-        default = heritage_list[0]
 
-    index = heritage_list.index(default)
-
-else:
-    index = None
+heritage = st.selectbox(
+    "문화재를 검색하거나 선택하세요.",
+    heritage_list,
+    index=default_index,
+    placeholder="예) 은해사"
+)
 
 heritage = st.selectbox(
     "문화재를 검색하거나 선택하세요.",
