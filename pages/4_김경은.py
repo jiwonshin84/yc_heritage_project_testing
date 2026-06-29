@@ -1,22 +1,17 @@
 import os
-
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-
-print(BASE_DIR)
-print(os.listdir(BASE_DIR))
-print(os.listdir(os.path.join(BASE_DIR, "data")))
-
-
-
-
-
 import pandas as pd
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+import matplotlib.pyplot as plt
+import streamlit as st
+
+from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
 
-df = pd.read_csv("yc_heritage_feature.csv", encoding="utf-8-sig")
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+DATA_PATH = os.path.join(BASE_DIR, "data", "yc_heritage_feature.csv")
+
+df = pd.read_csv(DATA_PATH, encoding="utf-8-sig")
 
 features = [
     "문화재연령",
@@ -28,45 +23,54 @@ features = [
 
 data = df[features].copy()
 
-categorical = ["국가유산종목", "시대그룹", "재질", "노출형태"]
-
-for col in categorical:
-    encoder = LabelEncoder()
-    data[col] = encoder.fit_transform(data[col].astype(str))
+for col in ["국가유산종목", "시대그룹", "재질", "노출형태"]:
+    le = LabelEncoder()
+    data[col] = le.fit_transform(data[col].astype(str))
 
 scaler = StandardScaler()
 X = scaler.fit_transform(data)
 
-kmeans = KMeans(n_clusters=3, random_state=42)
+kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
 
 df["Cluster"] = kmeans.fit_predict(X)
 
-print(df[["문화재명(국문)", "Cluster"]])
-
-print(df["Cluster"].value_counts())
-
-cluster_mean = df.groupby("Cluster")["문화재연령"].mean()
-
-print(cluster_mean)
-
 pca = PCA(n_components=2)
+X_pca = pca.fit_transform(X)
 
-pca_result = pca.fit_transform(X)
+st.title("문화재 군집분석")
 
-plt.figure(figsize=(8, 6))
+st.subheader("군집 결과")
 
-plt.scatter(
-    pca_result[:, 0],
-    pca_result[:, 1],
-    c=df["Cluster"],
-    cmap="viridis",
-    s=70
+st.dataframe(
+    df[
+        [
+            "문화재명(국문)",
+            "문화재연령",
+            "재질",
+            "노출형태",
+            "Cluster"
+        ]
+    ]
 )
 
-plt.title("K-Means Clustering")
-plt.xlabel("PCA1")
-plt.ylabel("PCA2")
-plt.colorbar(label="Cluster")
-plt.show()
+st.subheader("군집별 문화재 개수")
 
-df.to_csv("heritage_cluster_result.csv", index=False, encoding="utf-8-sig")
+st.bar_chart(df["Cluster"].value_counts().sort_index())
+
+fig, ax = plt.subplots(figsize=(8,6))
+
+scatter = ax.scatter(
+    X_pca[:,0],
+    X_pca[:,1],
+    c=df["Cluster"],
+    cmap="viridis",
+    s=80
+)
+
+ax.set_xlabel("PCA1")
+ax.set_ylabel("PCA2")
+ax.set_title("K-Means Clustering")
+
+plt.colorbar(scatter)
+
+st.pyplot(fig)
