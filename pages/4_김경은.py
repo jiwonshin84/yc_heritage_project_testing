@@ -131,20 +131,37 @@ for i, group in enumerate(groups):
 
         st.divider()
 
-st.subheader("📋 문화재 목록")
+st.subheader("🗺️ 군집별 문화재 위치")
 
-group = st.selectbox(
+selected_group = st.selectbox(
     "군집 선택",
     sorted(df["군집"].unique())
 )
 
-result = df[df["군집"] == group][[
-    "문화재명(국문)",
-    "문화재연령",
-    "국가유산종목",
-    "시대그룹",
-    "재질",
-    "노출형태"
-]]
+group_df = df[df["군집"] == selected_group]
 
-st.dataframe(result, use_container_width=True)
+st.write(f"**{selected_group}에 속하는 문화재 위치**")
+
+st.map(
+    group_df.rename(
+        columns={
+            "위도": "lat",
+            "경도": "lon"
+        }
+    )[["lat", "lon"]]
+)
+
+st.subheader(f"📋 {selected_group} 문화재 목록")
+
+st.dataframe(
+    group_df[
+        [
+            "문화재명(국문)",
+            "문화재연령",
+            "국가유산종목",
+            "재질",
+            "노출형태"
+        ]
+    ],
+    use_container_width=True
+)
