@@ -80,6 +80,27 @@ cluster_count = df["군집"].value_counts().sort_index()
 
 st.bar_chart(cluster_count)
 
+
+st.subheader("📅 군집별 평균 문화재 연령")
+
+cluster_age = df.groupby("군집")["문화재연령"].mean()
+
+st.bar_chart(cluster_age)
+
+
+st.subheader("🪨 문화재 재질 분포")
+
+material_count = df["재질"].value_counts()
+
+st.bar_chart(material_count)
+
+
+st.subheader("🏞 노출 형태 분포")
+
+exposure_count = df["노출형태"].value_counts()
+
+st.bar_chart(exposure_count)
+
 st.subheader("📋 군집별 특징")
 
 for group in sorted(df["군집"].unique()):
