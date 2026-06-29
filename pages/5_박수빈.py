@@ -1,12 +1,8 @@
+```python
 import streamlit as st
 import pandas as pd
 import numpy as np
 import os
-
-import matplotlib
-matplotlib.use("Agg")
-
-import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
@@ -15,8 +11,7 @@ from sklearn.metrics import (
     accuracy_score,
     precision_score,
     recall_score,
-    f1_score,
-    confusion_matrix
+    f1_score
 )
 
 from sklearn.linear_model import LogisticRegression
@@ -39,10 +34,8 @@ st.set_page_config(
 st.title("🏛 문화재 훼손 위험도 예측 시스템")
 
 st.markdown("""
-### 환경 데이터를 활용한 문화재 보존 AI 시스템
-
-기상 데이터와 대기질 데이터를 기반으로
-문화재 훼손 위험도를 분석합니다.
+환경 데이터를 기반으로  
+문화재 훼손 위험도를 예측하는 AI 시스템입니다.
 """)
 
 # ---------------------------------------------------
@@ -67,27 +60,15 @@ def load_data():
 
     return df
 
-# ---------------------------------------------------
-# 데이터 로드
-# ---------------------------------------------------
-
 try:
 
     df = load_data()
 
 except Exception as e:
 
-    st.error(f"데이터 로드 오류: {e}")
+    st.error(f"데이터 로드 오류 : {e}")
 
     st.stop()
-
-# ---------------------------------------------------
-# 데이터 미리보기
-# ---------------------------------------------------
-
-st.subheader("📊 데이터 미리보기")
-
-st.dataframe(df.head())
 
 # ---------------------------------------------------
 # 결측치 처리
@@ -96,32 +77,58 @@ st.dataframe(df.head())
 df = df.fillna(0)
 
 # ---------------------------------------------------
-# 숫자형 컬럼 선택
+# 컬럼 확인
 # ---------------------------------------------------
 
-numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
+st.subheader("📌 데이터 컬럼")
 
-st.subheader("📌 숫자형 컬럼")
-
-st.write(numeric_cols)
+st.write(df.columns.tolist())
 
 # ---------------------------------------------------
-# 숫자형 컬럼 부족 체크
+# 환경 데이터 컬럼 선택
+# 실제 컬럼명에 맞게 수정 가능
 # ---------------------------------------------------
 
-if len(numeric_cols) < 5:
+environment_features = [
 
-    st.error("숫자형 컬럼이 부족합니다.")
+    "temp",
+    "humidity",
+    "rainfall",
+    "wind_speed",
+    "pm10",
+    "pm25"
 
-    st.stop()
+]
 
 # ---------------------------------------------------
-# feature 선택
+# 실제 존재하는 컬럼만 사용
 # ---------------------------------------------------
 
-selected_features = numeric_cols[:5]
+selected_features = []
 
-st.subheader("✅ 위험도 계산에 사용된 컬럼")
+for col in environment_features:
+
+    if col in df.columns:
+
+        selected_features.append(col)
+
+# ---------------------------------------------------
+# 컬럼 부족 체크
+# ---------------------------------------------------
+
+if len(selected_features) < 3:
+
+    st.warning("환경 컬럼명이 다를 수 있습니다.")
+
+    numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
+
+    selected_features = numeric_cols[:5]
+
+# ---------------------------------------------------
+# 사용 컬럼 출력
+# ---------------------------------------------------
+
+st.subheader("🌎 사용 환경 데이터")
 
 st.write(selected_features)
 
@@ -129,19 +136,15 @@ st.write(selected_features)
 # 위험도 점수 생성
 # ---------------------------------------------------
 
-df["risk_score"] = (
+weights = [0.3, 0.2, 0.2, 0.2, 0.1]
 
-    df[selected_features[0]] * 0.3 +
+risk_score = 0
 
-    df[selected_features[1]] * 0.2 +
+for i in range(len(selected_features)):
 
-    df[selected_features[2]] * 0.2 +
+    risk_score += df[selected_features[i]] * weights[i]
 
-    df[selected_features[3]] * 0.2 +
-
-    df[selected_features[4]] * 0.1
-
-)
+df["risk_score"] = risk_score
 
 # ---------------------------------------------------
 # 정규화
@@ -182,65 +185,83 @@ def classify_risk(score):
 df["risk_label"] = df["risk_score"].apply(classify_risk)
 
 # ---------------------------------------------------
-# 위험도 결과 출력
+# 상단 카드 UI
 # ---------------------------------------------------
 
-st.subheader("⚠ 위험도 결과")
+safe_count = len(df[df["risk_label"] == "안전"])
 
-st.dataframe(
+warn_count = len(df[df["risk_label"] == "주의"])
 
-    df[["risk_score", "risk_label"]].head()
+danger_count = len(df[df["risk_label"] == "위험"])
 
-)
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+
+    st.metric(
+        "전체 데이터",
+        len(df)
+    )
+
+with col2:
+
+    st.success(f"안전 : {safe_count}")
+
+with col3:
+
+    st.warning(f"주의 : {warn_count}")
+
+with col4:
+
+    st.error(f"위험 : {danger_count}")
 
 # ---------------------------------------------------
-# 위험도 분포 그래프
+# 탭 생성
 # ---------------------------------------------------
 
-st.subheader("📈 위험도 분포")
+tab1, tab2, tab3, tab4 = st.tabs([
 
-risk_count = df["risk_label"].value_counts()
+    "📊 대시보드",
 
-fig1, ax1 = plt.subplots(figsize=(6, 4))
+    "🤖 모델 비교",
 
-ax1.bar(
+    "🔥 환경 영향도",
 
-    risk_count.index,
+    "🎯 위험도 예측"
 
-    risk_count.values
+])
 
-)
+# ---------------------------------------------------
+# 대시보드
+# ---------------------------------------------------
 
-ax1.set_title("Risk Distribution")
+with tab1:
 
-ax1.set_xlabel("Risk Level")
+    st.subheader("위험도 분포")
 
-ax1.set_ylabel("Count")
+    risk_count = df["risk_label"].value_counts()
 
-st.pyplot(fig1)
+    st.bar_chart(risk_count)
+
+    st.subheader("데이터 미리보기")
+
+    st.dataframe(df.head())
 
 # ---------------------------------------------------
 # 머신러닝 데이터 준비
 # ---------------------------------------------------
 
-X = df[numeric_cols]
+X = df[selected_features]
 
 le = LabelEncoder()
 
 y = le.fit_transform(df["risk_label"])
 
-# ---------------------------------------------------
-# train / test split
-# ---------------------------------------------------
-
 X_train, X_test, y_train, y_test = train_test_split(
 
     X,
-
     y,
-
     test_size=0.2,
-
     random_state=42
 
 )
@@ -259,17 +280,11 @@ models = {
 
 }
 
-# ---------------------------------------------------
-# 결과 저장 리스트
-# ---------------------------------------------------
-
 results = []
 
 # ---------------------------------------------------
 # 모델 학습
 # ---------------------------------------------------
-
-st.subheader("🤖 머신러닝 모델 비교")
 
 for name, model in models.items():
 
@@ -280,33 +295,21 @@ for name, model in models.items():
     acc = accuracy_score(y_test, pred)
 
     pre = precision_score(
-
         y_test,
-
         pred,
-
         average="weighted"
-
     )
 
     rec = recall_score(
-
         y_test,
-
         pred,
-
         average="weighted"
-
     )
 
     f1 = f1_score(
-
         y_test,
-
         pred,
-
         average="weighted"
-
     )
 
     results.append({
@@ -323,63 +326,33 @@ for name, model in models.items():
 
     })
 
-# ---------------------------------------------------
-# 결과 데이터프레임
-# ---------------------------------------------------
-
 result_df = pd.DataFrame(results)
 
-st.dataframe(result_df)
-
 # ---------------------------------------------------
-# Accuracy 그래프
+# 모델 비교 탭
 # ---------------------------------------------------
 
-st.subheader("📊 Accuracy 비교")
+with tab2:
 
-fig2, ax2 = plt.subplots(figsize=(8, 5))
+    st.subheader("모델 성능 비교")
 
-ax2.bar(
+    st.dataframe(result_df)
 
-    result_df["Model"],
+    st.subheader("Accuracy 비교")
 
-    result_df["Accuracy"]
+    st.bar_chart(
+        result_df.set_index("Model")["Accuracy"]
+    )
 
-)
+    st.subheader("F1-Score 비교")
 
-ax2.set_title("Model Accuracy")
-
-ax2.set_ylabel("Accuracy")
-
-st.pyplot(fig2)
-
-# ---------------------------------------------------
-# F1 Score 그래프
-# ---------------------------------------------------
-
-st.subheader("📊 F1-Score 비교")
-
-fig3, ax3 = plt.subplots(figsize=(8, 5))
-
-ax3.bar(
-
-    result_df["Model"],
-
-    result_df["F1-Score"]
-
-)
-
-ax3.set_title("Model F1-Score")
-
-ax3.set_ylabel("F1 Score")
-
-st.pyplot(fig3)
+    st.bar_chart(
+        result_df.set_index("Model")["F1-Score"]
+    )
 
 # ---------------------------------------------------
 # Random Forest Feature Importance
 # ---------------------------------------------------
-
-st.subheader("🔥 Feature Importance")
 
 rf_model = RandomForestClassifier()
 
@@ -401,89 +374,63 @@ importance = importance.sort_values(
 
 )
 
-top10 = importance.head(10)
-
 # ---------------------------------------------------
-# importance 그래프
+# 환경 영향도 탭
 # ---------------------------------------------------
 
-fig4, ax4 = plt.subplots(figsize=(10, 6))
+with tab3:
 
-ax4.barh(
+    st.subheader("환경요인 중요도")
 
-    top10["Feature"],
+    st.bar_chart(
+        importance.set_index("Feature")
+    )
 
-    top10["Importance"]
-
-)
-
-ax4.invert_yaxis()
-
-ax4.set_title("Top 10 Important Features")
-
-st.pyplot(fig4)
+    st.dataframe(importance)
 
 # ---------------------------------------------------
-# confusion matrix
+# 위험도 예측 탭
 # ---------------------------------------------------
 
-st.subheader("🧠 Confusion Matrix")
+with tab4:
 
-pred_rf = rf_model.predict(X_test)
+    st.subheader("실시간 위험도 예측")
 
-cm = confusion_matrix(y_test, pred_rf)
+    input_values = {}
 
-fig5, ax5 = plt.subplots(figsize=(5, 5))
+    for feature in selected_features:
 
-ax5.imshow(cm)
+        input_values[feature] = st.slider(
 
-ax5.set_title("Random Forest Confusion Matrix")
+            feature,
 
-ax5.set_xlabel("Predicted")
+            0.0,
 
-ax5.set_ylabel("Actual")
+            100.0,
 
-for i in range(len(cm)):
-
-    for j in range(len(cm)):
-
-        ax5.text(
-
-            j,
-
-            i,
-
-            cm[i, j],
-
-            ha="center",
-
-            va="center"
+            50.0
 
         )
 
-st.pyplot(fig5)
+    if st.button("위험도 예측"):
 
-# ---------------------------------------------------
-# 샘플 예측
-# ---------------------------------------------------
+        input_df = pd.DataFrame([input_values])
 
-st.subheader("🎯 샘플 위험도 예측")
+        pred = rf_model.predict(input_df)
 
-sample = X.iloc[0:1]
+        label = le.inverse_transform(pred)
 
-prediction = rf_model.predict(sample)
+        if label[0] == "안전":
 
-label = le.inverse_transform(prediction)
+            st.success(f"예측 결과 : {label[0]}")
 
-st.success(f"예측 결과 : {label[0]}")
+        elif label[0] == "주의":
 
-# ---------------------------------------------------
-# 전체 데이터 보기
-# ---------------------------------------------------
+            st.warning(f"예측 결과 : {label[0]}")
 
-with st.expander("📄 전체 데이터 보기"):
+        else:
 
-    st.dataframe(df)
+            st.error(f"예측 결과 : {label[0]}")
 
 # ---------------------------------------------------
 # footer
@@ -496,10 +443,11 @@ st.markdown("""
 ### 👨‍💻 프로젝트 정보
 
 - 프로젝트명 : 문화재 훼손 위험도 예측 시스템
-- 개발도구 : Python / Streamlit
+- 사용기술 : Python / Streamlit / Machine Learning
 - 머신러닝 모델 :
     - Logistic Regression
     - Decision Tree
     - Random Forest
 
 """)
+```
