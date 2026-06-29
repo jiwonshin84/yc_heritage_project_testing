@@ -1,28 +1,13 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import os
-
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
-
-from sklearn.metrics import (
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score
-)
-
-from sklearn.linear_model import LogisticRegression
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier
 
 # ---------------------------------------------------
 # 페이지 설정
 # ---------------------------------------------------
 
 st.set_page_config(
-    page_title="문화재 훼손 위험도 예측",
+    page_title="문화재 환경 위험도 예측",
     layout="wide"
 )
 
@@ -30,408 +15,342 @@ st.set_page_config(
 # 제목
 # ---------------------------------------------------
 
-st.title("🏛 문화재 훼손 위험도 예측 시스템")
+st.title("🏛 문화재 환경 위험도 예측 시스템")
 
 st.markdown("""
-환경 데이터를 기반으로  
-문화재 훼손 위험도를 예측하는 AI 시스템입니다.
+문화재 종류별 적정 보존 환경 기준을 기반으로  
+환경 위험도를 분석하는 시스템입니다.
+
+### 분석 대상
+- 금속 문화재
+- 지류 문화재
+- 목재 문화재
+
+### 사용 환경 데이터
+- 온도
+- 상대습도
+- 빛 노출 정도
 """)
 
-# ---------------------------------------------------
-# 데이터 불러오기
-# ---------------------------------------------------
-
-@st.cache_data
-def load_data():
-
-    BASE_DIR = os.path.dirname(
-        os.path.dirname(__file__)
-    )
-
-    file_path = os.path.join(
-        BASE_DIR,
-        "data",
-        "processed",
-        "yc_heritage_feature.csv"
-    )
-
-    df = pd.read_csv(file_path)
-
-    return df
-
-try:
-
-    df = load_data()
-
-except Exception as e:
-
-    st.error(f"데이터 로드 오류 : {e}")
-
-    st.stop()
+st.markdown("---")
 
 # ---------------------------------------------------
-# 결측치 처리
+# 탭 구성
 # ---------------------------------------------------
 
-df = df.fillna(0)
-
-# ---------------------------------------------------
-# 컬럼 확인
-# ---------------------------------------------------
-
-st.subheader("📌 데이터 컬럼")
-
-st.write(df.columns.tolist())
-
-# ---------------------------------------------------
-# 환경 데이터 컬럼
-# 실제 컬럼명에 맞게 수정 가능
-# ---------------------------------------------------
-
-environment_features = [
-    "temp",
-    "humidity",
-    "rainfall",
-    "wind_speed",
-    "pm10",
-    "pm25"
-]
-
-# ---------------------------------------------------
-# 실제 존재하는 컬럼만 사용
-# ---------------------------------------------------
-
-selected_features = []
-
-for col in environment_features:
-
-    if col in df.columns:
-
-        selected_features.append(col)
-
-# ---------------------------------------------------
-# 컬럼 부족 시 숫자형 자동 선택
-# ---------------------------------------------------
-
-if len(selected_features) < 3:
-
-    st.warning("환경 컬럼명이 달라 자동 선택합니다.")
-
-    numeric_cols = df.select_dtypes(
-        include=np.number
-    ).columns.tolist()
-
-    selected_features = numeric_cols[:5]
-
-# ---------------------------------------------------
-# 사용 컬럼 출력
-# ---------------------------------------------------
-
-st.subheader("🌎 사용 환경 데이터")
-
-st.write(selected_features)
-
-# ---------------------------------------------------
-# 위험도 점수 생성
-# ---------------------------------------------------
-
-weights = [0.3, 0.2, 0.2, 0.2, 0.1]
-
-risk_score = 0
-
-for i in range(len(selected_features)):
-
-    risk_score += (
-        df[selected_features[i]] * weights[i]
-    )
-
-df["risk_score"] = risk_score
-
-# ---------------------------------------------------
-# 정규화
-# ---------------------------------------------------
-
-min_score = df["risk_score"].min()
-
-max_score = df["risk_score"].max()
-
-df["risk_score"] = (
-    (df["risk_score"] - min_score)
-    /
-    (max_score - min_score)
-) * 100
-
-# ---------------------------------------------------
-# 위험도 라벨 생성
-# ---------------------------------------------------
-
-def classify_risk(score):
-
-    if score < 33:
-        return "안전"
-
-    elif score < 66:
-        return "주의"
-
-    else:
-        return "위험"
-
-df["risk_label"] = df["risk_score"].apply(
-    classify_risk
-)
-
-# ---------------------------------------------------
-# 상단 카드
-# ---------------------------------------------------
-
-safe_count = len(
-    df[df["risk_label"] == "안전"]
-)
-
-warn_count = len(
-    df[df["risk_label"] == "주의"]
-)
-
-danger_count = len(
-    df[df["risk_label"] == "위험"]
-)
-
-col1, col2, col3, col4 = st.columns(4)
-
-with col1:
-
-    st.metric(
-        "전체 데이터",
-        len(df)
-    )
-
-with col2:
-
-    st.success(f"안전 : {safe_count}")
-
-with col3:
-
-    st.warning(f"주의 : {warn_count}")
-
-with col4:
-
-    st.error(f"위험 : {danger_count}")
-
-# ---------------------------------------------------
-# 탭 생성
-# ---------------------------------------------------
-
-tab1, tab2, tab3, tab4 = st.tabs([
-    "📊 대시보드",
-    "🤖 모델 비교",
-    "🔥 환경 영향도",
-    "🎯 위험도 예측"
+tab1, tab2, tab3 = st.tabs([
+    "📚 문화재 기준",
+    "🌎 위험도 예측",
+    "📊 환경 분석 결과"
 ])
 
 # ---------------------------------------------------
-# 대시보드
+# 문화재 기준 설명
 # ---------------------------------------------------
 
 with tab1:
 
-    st.subheader("위험도 분포")
+    st.header("📚 문화재별 보존 환경 기준")
 
-    risk_count = df["risk_label"].value_counts()
+    col1, col2, col3 = st.columns(3)
 
-    st.bar_chart(risk_count)
+    # 금속 문화재
+    with col1:
 
-    st.subheader("데이터 미리보기")
+        st.subheader("🛡 금속 문화재")
 
-    st.dataframe(df.head())
+        st.info("""
+        ✅ 적정 온도 : 15~25°C  
+        ✅ 적정 습도 : 35~55%
 
-# ---------------------------------------------------
-# 머신러닝 데이터
-# ---------------------------------------------------
+        ⚠ 상대습도 65% 이상 시  
+        부식 속도가 급격히 증가합니다.
+        """)
 
-X = df[selected_features]
+    # 지류 문화재
+    with col2:
 
-le = LabelEncoder()
+        st.subheader("📜 지류 문화재")
 
-y = le.fit_transform(
-    df["risk_label"]
-)
+        st.info("""
+        ✅ 적정 온도 : 18~22°C  
+        ✅ 적정 습도 : 45~55%
 
-X_train, X_test, y_train, y_test = train_test_split(
-    X,
-    y,
-    test_size=0.2,
-    random_state=42
-)
+        ⚠ 높은 습도와 빛 노출 시  
+        황변 및 강도 저하가 발생합니다.
+        """)
 
-# ---------------------------------------------------
-# 모델 정의
-# ---------------------------------------------------
+    # 목재 문화재
+    with col3:
 
-models = {
+        st.subheader("🪵 목재 문화재")
 
-    "Logistic Regression":
-        LogisticRegression(max_iter=1000),
+        st.info("""
+        ✅ 적정 온도 : 18~22°C  
+        ✅ 적정 습도 : 50~60%
 
-    "Decision Tree":
-        DecisionTreeClassifier(),
-
-    "Random Forest":
-        RandomForestClassifier()
-
-}
-
-results = []
+        ⚠ 상대습도 65% 이상 시  
+        곰팡이와 해충 발생 위험 증가
+        """)
 
 # ---------------------------------------------------
-# 모델 학습
-# ---------------------------------------------------
-
-for name, model in models.items():
-
-    model.fit(X_train, y_train)
-
-    pred = model.predict(X_test)
-
-    acc = accuracy_score(y_test, pred)
-
-    pre = precision_score(
-        y_test,
-        pred,
-        average="weighted"
-    )
-
-    rec = recall_score(
-        y_test,
-        pred,
-        average="weighted"
-    )
-
-    f1 = f1_score(
-        y_test,
-        pred,
-        average="weighted"
-    )
-
-    results.append({
-
-        "Model": name,
-
-        "Accuracy": round(acc, 3),
-
-        "Precision": round(pre, 3),
-
-        "Recall": round(rec, 3),
-
-        "F1-Score": round(f1, 3)
-
-    })
-
-result_df = pd.DataFrame(results)
-
-# ---------------------------------------------------
-# 모델 비교 탭
+# 위험도 예측
 # ---------------------------------------------------
 
 with tab2:
 
-    st.subheader("모델 성능 비교")
+    st.header("🌎 환경 기반 위험도 예측")
 
-    st.dataframe(result_df)
+    st.markdown("""
+    환경 데이터를 입력하면  
+    문화재 훼손 위험도를 예측합니다.
+    """)
 
-    st.subheader("Accuracy 비교")
-
-    st.bar_chart(
-        result_df.set_index("Model")["Accuracy"]
+    # 문화재 종류 선택
+    artifact_type = st.selectbox(
+        "문화재 종류 선택",
+        [
+            "금속 문화재",
+            "지류 문화재",
+            "목재 문화재"
+        ]
     )
 
-    st.subheader("F1-Score 비교")
+    st.markdown("---")
 
-    st.bar_chart(
-        result_df.set_index("Model")["F1-Score"]
-    )
+    # 환경 데이터 입력
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        temperature = st.slider(
+            "🌡 온도 (°C)",
+            0,
+            40,
+            20
+        )
+
+        humidity = st.slider(
+            "💧 상대습도 (%)",
+            0,
+            100,
+            50
+        )
+
+    with col2:
+
+        light = st.slider(
+            "💡 빛 노출 정도",
+            0,
+            100,
+            30
+        )
+
+    st.markdown("---")
+
+    # 위험도 계산
+    risk_score = 0
+
+    # ---------------------------------------------------
+    # 금속 문화재
+    # ---------------------------------------------------
+
+    if artifact_type == "금속 문화재":
+
+        # 온도 위험도
+        if temperature < 15 or temperature > 25:
+            risk_score += 20
+
+        # 습도 위험도
+        if humidity >= 65:
+            risk_score += 60
+
+        elif humidity > 55:
+            risk_score += 30
+
+    # ---------------------------------------------------
+    # 지류 문화재
+    # ---------------------------------------------------
+
+    elif artifact_type == "지류 문화재":
+
+        # 온도
+        if temperature < 18 or temperature > 22:
+            risk_score += 20
+
+        # 습도
+        if humidity > 55:
+            risk_score += 40
+
+        # 빛 노출
+        if light > 70:
+            risk_score += 40
+
+        elif light > 40:
+            risk_score += 20
+
+    # ---------------------------------------------------
+    # 목재 문화재
+    # ---------------------------------------------------
+
+    elif artifact_type == "목재 문화재":
+
+        # 온도
+        if temperature < 18 or temperature > 22:
+            risk_score += 20
+
+        # 습도
+        if humidity >= 65:
+            risk_score += 60
+
+        elif humidity > 60:
+            risk_score += 30
+
+    # ---------------------------------------------------
+    # 위험도 결과 분류
+    # ---------------------------------------------------
+
+    if risk_score < 30:
+
+        risk_level = "안전"
+
+    elif risk_score < 70:
+
+        risk_level = "주의"
+
+    else:
+
+        risk_level = "위험"
+
+    # ---------------------------------------------------
+    # 결과 출력
+    # ---------------------------------------------------
+
+    st.subheader("📌 예측 결과")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        st.metric(
+            "위험도 점수",
+            f"{risk_score}점"
+        )
+
+    with col2:
+
+        if risk_level == "안전":
+
+            st.success(f"🟢 {risk_level}")
+
+        elif risk_level == "주의":
+
+            st.warning(f"🟡 {risk_level}")
+
+        else:
+
+            st.error(f"🔴 {risk_level}")
+
+    st.markdown("---")
+
+    # 상세 설명
+    st.subheader("📖 환경 분석 설명")
+
+    if artifact_type == "금속 문화재":
+
+        if humidity >= 65:
+
+            st.error("""
+            상대습도가 65% 이상입니다.
+
+            금속 표면의 부식 반응이 빠르게 증가할 수 있습니다.
+            """)
+
+        else:
+
+            st.success("""
+            현재 환경은 비교적 안정적인 상태입니다.
+            """)
+
+    elif artifact_type == "지류 문화재":
+
+        if humidity > 55:
+
+            st.warning("""
+            높은 습도로 인해 황변과 강도 저하 가능성이 있습니다.
+            """)
+
+        if light > 40:
+
+            st.warning("""
+            빛 노출이 증가하면 종이 손상이 가속화됩니다.
+            """)
+
+    elif artifact_type == "목재 문화재":
+
+        if humidity >= 65:
+
+            st.error("""
+            습도가 매우 높습니다.
+
+            곰팡이 및 해충 발생 위험이 증가할 수 있습니다.
+            """)
+
+        else:
+
+            st.success("""
+            현재 환경은 비교적 안정적인 상태입니다.
+            """)
 
 # ---------------------------------------------------
-# Feature Importance
-# ---------------------------------------------------
-
-rf_model = RandomForestClassifier()
-
-rf_model.fit(X_train, y_train)
-
-importance = pd.DataFrame({
-
-    "Feature": X.columns,
-
-    "Importance":
-        rf_model.feature_importances_
-
-})
-
-importance = importance.sort_values(
-    by="Importance",
-    ascending=False
-)
-
-# ---------------------------------------------------
-# 환경 영향도 탭
+# 분석 결과 시각화
 # ---------------------------------------------------
 
 with tab3:
 
-    st.subheader("환경요인 중요도")
+    st.header("📊 환경 분석 결과")
+
+    chart_data = pd.DataFrame({
+
+        "환경요인": [
+            "온도",
+            "습도",
+            "빛 노출"
+        ],
+
+        "입력값": [
+            temperature,
+            humidity,
+            light
+        ]
+
+    })
 
     st.bar_chart(
-        importance.set_index("Feature")
+        chart_data.set_index("환경요인")
     )
 
-    st.dataframe(importance)
+    st.markdown("---")
 
-# ---------------------------------------------------
-# 위험도 예측 탭
-# ---------------------------------------------------
+    st.subheader("📈 위험도 기준")
 
-with tab4:
+    risk_table = pd.DataFrame({
 
-    st.subheader("실시간 위험도 예측")
+        "위험도": [
+            "안전",
+            "주의",
+            "위험"
+        ],
 
-    input_values = {}
+        "점수 범위": [
+            "0 ~ 29",
+            "30 ~ 69",
+            "70 이상"
+        ]
 
-    for feature in selected_features:
+    })
 
-        input_values[feature] = st.slider(
-            feature,
-            0.0,
-            100.0,
-            50.0
-        )
-
-    if st.button("위험도 예측"):
-
-        input_df = pd.DataFrame(
-            [input_values]
-        )
-
-        pred = rf_model.predict(input_df)
-
-        label = le.inverse_transform(pred)
-
-        if label[0] == "안전":
-
-            st.success(
-                f"예측 결과 : {label[0]}"
-            )
-
-        elif label[0] == "주의":
-
-            st.warning(
-                f"예측 결과 : {label[0]}"
-            )
-
-        else:
-
-            st.error(
-                f"예측 결과 : {label[0]}"
-            )
+    st.table(risk_table)
 
 # ---------------------------------------------------
 # footer
@@ -440,14 +359,16 @@ with tab4:
 st.markdown("---")
 
 st.markdown("""
-
 ### 👨‍💻 프로젝트 정보
 
-- 프로젝트명 : 문화재 훼손 위험도 예측 시스템
-- 사용기술 : Python / Streamlit / Machine Learning
-- 머신러닝 모델
-    - Logistic Regression
-    - Decision Tree
-    - Random Forest
+- 프로젝트명 : 문화재 환경 위험도 예측 시스템
+- 분석 요소 :
+    - 온도
+    - 상대습도
+    - 빛 노출
 
+- 분석 대상 :
+    - 금속 문화재
+    - 지류 문화재
+    - 목재 문화재
 """)
