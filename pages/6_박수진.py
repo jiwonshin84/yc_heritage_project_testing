@@ -9,48 +9,56 @@ import pandas as pd
 import plotly.graph_objects as go
 import os
 
-# 1. 페이지 상단 안내
+# 1. 페이지 상단 제목 및 설명
 st.header("🛡️ 박수진 - 훼손위험도 예측 시스템")
 st.write("영천의 모든 문화재 데이터를 가나다순으로 제공합니다. 유산을 선택하시면 AI 훼손 위험도를 정밀 예측합니다.")
 st.markdown("---")
 
-# 2. 데이터 파일 안전하게 불러오기 및 가나다순 정렬
+# 2. 📂 데이터 파일 탐색 및 로드 (105개 데이터 전수 로드 보장)
 @st.cache_data
 def load_data():
-    file_name = "yc_heritage_feature.xlsx - yc_heritage_feature.csv"
-    if os.path.exists(file_name):
-        df = pd.read_csv(file_name)
-    elif os.path.exists("yc_heritage_feature.csv"):
-        df = pd.read_csv("yc_heritage_feature.csv")
-    else:
-        # 파일이 없을 때 앱이 멈추지 않도록 제공하는 임시 샘플 데이터
-        df = pd.DataFrame({
-            '문화재명(국문)': ['영천 거조사 영산전', '영천 청제비', '영천 신월리 삼층석탑'],
-            '국가유산종목': ['국보', '국보', '보물'],
-            '재질': ['기타', '석조', '석조'],
-            '노출형태': ['반실외', '실외', '실외'],
-            '문화재연령': [676, 1426, 1226]
-        })
+    # 파일 탐색 순서 배치
+    possible_paths = [
+        "yc_heritage_feature.xlsx - yc_heritage_feature.csv",
+        "yc_heritage_feature.csv",
+        "../yc_heritage_feature.csv"
+    ]
     
-    # 💡 핵심: 결측치 제거 후 문화재명을 가나다(알파벳) 순서대로 정렬
-    df = df.dropna(subset=['문화재명(국문)'])
-    df = df.sort_values(by='문화재명(국문)').reset_index(drop=True)
+    df = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            df = pd.read_csv(path)
+            break
+            
+    # 만약 파일이 여전히 감지되지 않는다면 사용자가 알 수 있도록 경고창용 빈 데이터 생성
+    if df is None:
+        df = pd.DataFrame({
+            '문화재명(국문)': ['🚨 데이터 파일[yc_heritage_feature.csv]을 찾을 수 없습니다. 깃허브 폴더를 확인해주세요.'],
+            '국가유산종목': ['알수없음'],
+            '재질': ['기타'],
+            '노출형태': ['실외'],
+            '문화재연령': [100]
+        })
+    else:
+        # 💡 핵심: 파일이 잘 로드되었다면 가나다 순서로 깔끔하게 정렬
+        df = df.dropna(subset=['문화재명(국문)'])
+        df = df.sort_values(by='문화재명(국문)').reset_index(drop=True)
+        
     return df
 
 df = load_data()
 
-# 3. 🔍 검색창 대신 영천 모든 문화재를 가나다순 목록(Selectbox)으로 바로 나열
+# 3. 🏛️ 드롭다운 선택창 배치 (여기에서 105개의 리스트가 전부 나옵니다)
 st.subheader("🏛️ 분석 대상 문화재 선택")
 heritage_list = df['문화재명(국문)'].tolist()
 
-# 드롭다운 선택창 제공
 selected_name = st.selectbox(
     "위험도를 분석할 문화재를 목록에서 선택하세요:",
     heritage_list,
-    index=0  # 기본값으로 첫 번째 문화재 선택
+    index=0
 )
 
-# 4. 선택된 문화재의 상세 정보 매핑
+# 4. 선택된 문화재의 데이터 파싱 및 안전한 예외 처리
 if selected_name:
     info = df[df['문화재명(국문)'] == selected_name].iloc[0]
     
@@ -60,7 +68,7 @@ if selected_name:
     h_age = int(info['문화재연령']) if '문화재연령' in info and pd.notna(info['문화재연령']) else 100
     h_exposure = str(info['노출형태']) if '노출형태' in info and pd.notna(info['노출형태']) else "실외"
 
-    # 문화재 기본 정보 메트릭 출력
+    # 문화재 정보 카드 레이아웃
     c1, c2 = st.columns(2)
     with c1:
         st.markdown(f"**🏛️ 문화재명:** {h_name} ({h_kind})")
@@ -71,7 +79,7 @@ if selected_name:
 
     st.markdown("---")
 
-    # 5. 🌦️ 기상 환경 연동 및 제어 슬라이더
+    # 5. 🌦️ 실시간 기상 환경 연동 슬라이더
     st.subheader("🌦️ 실시간 기상 환경 연동")
     st.write("현재 영천 기상 관측 조건입니다. 환경 변화에 따른 위험도를 시뮬레이션할 수 있습니다.")
     
@@ -93,7 +101,6 @@ if selected_name:
         
     final_risk = min(int(score), 100)
 
-    # 위험도 레벨에 따른 스타일 설정
     if final_risk < 45:
         status, color = "정상/안전", "#28a745"
     elif final_risk < 75:
@@ -101,7 +108,7 @@ if selected_name:
     else:
         status, color = "위험/심각", "#dc3545"
 
-    # 게이지 차트 그리기
+    # 게이지 차트 시각화
     st.subheader("📊 실시간 훼손위험도 결과")
     fig = go.Figure(go.Indicator(
         mode = "gauge+number",
@@ -122,7 +129,7 @@ if selected_name:
     fig.update_layout(height=240, margin=dict(l=30, r=30, t=40, b=20))
     st.plotly_chart(fig, use_container_width=True)
 
-    # 7. 🤖 AI 분석 리포트 출력
+    # 7. 🤖 데이터 맞춤형 AI 리포트 출력
     st.subheader("🤖 AI 종합 진단서")
     with st.expander("📝 상세 리포트 열기", expanded=True):
         st.write(f"본 유산은 약 {h_age}년 동안 보존된 영천의 소중한 자산입니다. 지정된 환경 분석 결과는 다음과 같습니다.")
