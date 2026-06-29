@@ -1,4 +1,3 @@
-```python
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -85,19 +84,17 @@ st.subheader("📌 데이터 컬럼")
 st.write(df.columns.tolist())
 
 # ---------------------------------------------------
-# 환경 데이터 컬럼 선택
+# 환경 데이터 컬럼
 # 실제 컬럼명에 맞게 수정 가능
 # ---------------------------------------------------
 
 environment_features = [
-
     "temp",
     "humidity",
     "rainfall",
     "wind_speed",
     "pm10",
     "pm25"
-
 ]
 
 # ---------------------------------------------------
@@ -113,14 +110,16 @@ for col in environment_features:
         selected_features.append(col)
 
 # ---------------------------------------------------
-# 컬럼 부족 체크
+# 컬럼 부족 시 숫자형 자동 선택
 # ---------------------------------------------------
 
 if len(selected_features) < 3:
 
-    st.warning("환경 컬럼명이 다를 수 있습니다.")
+    st.warning("환경 컬럼명이 달라 자동 선택합니다.")
 
-    numeric_cols = df.select_dtypes(include=np.number).columns.tolist()
+    numeric_cols = df.select_dtypes(
+        include=np.number
+    ).columns.tolist()
 
     selected_features = numeric_cols[:5]
 
@@ -142,7 +141,9 @@ risk_score = 0
 
 for i in range(len(selected_features)):
 
-    risk_score += df[selected_features[i]] * weights[i]
+    risk_score += (
+        df[selected_features[i]] * weights[i]
+    )
 
 df["risk_score"] = risk_score
 
@@ -155,13 +156,9 @@ min_score = df["risk_score"].min()
 max_score = df["risk_score"].max()
 
 df["risk_score"] = (
-
     (df["risk_score"] - min_score)
-
     /
-
     (max_score - min_score)
-
 ) * 100
 
 # ---------------------------------------------------
@@ -171,28 +168,33 @@ df["risk_score"] = (
 def classify_risk(score):
 
     if score < 33:
-
         return "안전"
 
     elif score < 66:
-
         return "주의"
 
     else:
-
         return "위험"
 
-df["risk_label"] = df["risk_score"].apply(classify_risk)
+df["risk_label"] = df["risk_score"].apply(
+    classify_risk
+)
 
 # ---------------------------------------------------
-# 상단 카드 UI
+# 상단 카드
 # ---------------------------------------------------
 
-safe_count = len(df[df["risk_label"] == "안전"])
+safe_count = len(
+    df[df["risk_label"] == "안전"]
+)
 
-warn_count = len(df[df["risk_label"] == "주의"])
+warn_count = len(
+    df[df["risk_label"] == "주의"]
+)
 
-danger_count = len(df[df["risk_label"] == "위험"])
+danger_count = len(
+    df[df["risk_label"] == "위험"]
+)
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -220,15 +222,10 @@ with col4:
 # ---------------------------------------------------
 
 tab1, tab2, tab3, tab4 = st.tabs([
-
     "📊 대시보드",
-
     "🤖 모델 비교",
-
     "🔥 환경 영향도",
-
     "🎯 위험도 예측"
-
 ])
 
 # ---------------------------------------------------
@@ -248,22 +245,22 @@ with tab1:
     st.dataframe(df.head())
 
 # ---------------------------------------------------
-# 머신러닝 데이터 준비
+# 머신러닝 데이터
 # ---------------------------------------------------
 
 X = df[selected_features]
 
 le = LabelEncoder()
 
-y = le.fit_transform(df["risk_label"])
+y = le.fit_transform(
+    df["risk_label"]
+)
 
 X_train, X_test, y_train, y_test = train_test_split(
-
     X,
     y,
     test_size=0.2,
     random_state=42
-
 )
 
 # ---------------------------------------------------
@@ -272,11 +269,14 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 models = {
 
-    "Logistic Regression": LogisticRegression(max_iter=1000),
+    "Logistic Regression":
+        LogisticRegression(max_iter=1000),
 
-    "Decision Tree": DecisionTreeClassifier(),
+    "Decision Tree":
+        DecisionTreeClassifier(),
 
-    "Random Forest": RandomForestClassifier()
+    "Random Forest":
+        RandomForestClassifier()
 
 }
 
@@ -351,7 +351,7 @@ with tab2:
     )
 
 # ---------------------------------------------------
-# Random Forest Feature Importance
+# Feature Importance
 # ---------------------------------------------------
 
 rf_model = RandomForestClassifier()
@@ -362,16 +362,14 @@ importance = pd.DataFrame({
 
     "Feature": X.columns,
 
-    "Importance": rf_model.feature_importances_
+    "Importance":
+        rf_model.feature_importances_
 
 })
 
 importance = importance.sort_values(
-
     by="Importance",
-
     ascending=False
-
 )
 
 # ---------------------------------------------------
@@ -401,20 +399,17 @@ with tab4:
     for feature in selected_features:
 
         input_values[feature] = st.slider(
-
             feature,
-
             0.0,
-
             100.0,
-
             50.0
-
         )
 
     if st.button("위험도 예측"):
 
-        input_df = pd.DataFrame([input_values])
+        input_df = pd.DataFrame(
+            [input_values]
+        )
 
         pred = rf_model.predict(input_df)
 
@@ -422,15 +417,21 @@ with tab4:
 
         if label[0] == "안전":
 
-            st.success(f"예측 결과 : {label[0]}")
+            st.success(
+                f"예측 결과 : {label[0]}"
+            )
 
         elif label[0] == "주의":
 
-            st.warning(f"예측 결과 : {label[0]}")
+            st.warning(
+                f"예측 결과 : {label[0]}"
+            )
 
         else:
 
-            st.error(f"예측 결과 : {label[0]}")
+            st.error(
+                f"예측 결과 : {label[0]}"
+            )
 
 # ---------------------------------------------------
 # footer
@@ -444,10 +445,9 @@ st.markdown("""
 
 - 프로젝트명 : 문화재 훼손 위험도 예측 시스템
 - 사용기술 : Python / Streamlit / Machine Learning
-- 머신러닝 모델 :
+- 머신러닝 모델
     - Logistic Regression
     - Decision Tree
     - Random Forest
 
 """)
-```
