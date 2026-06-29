@@ -1,3 +1,15 @@
+import os
+
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+
+print(BASE_DIR)
+print(os.listdir(BASE_DIR))
+print(os.listdir(os.path.join(BASE_DIR, "data")))
+
+
+
+
+
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.cluster import KMeans
