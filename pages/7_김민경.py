@@ -101,7 +101,7 @@ with col2:
 """
 
     st.info(explanation)
-        st.divider()
+    st.divider()
 
     st.subheader("🎓 수준별 해설")
 
