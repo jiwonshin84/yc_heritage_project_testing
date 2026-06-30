@@ -6,6 +6,9 @@ from streamlit_folium import st_folium
 
 st.set_page_config(page_title="AI 문화재 해설", layout="wide")
 
+if "selected_heritage" not in st.session_state:
+    st.session_state.selected_heritage = None
+
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 
 DATA_PATH = os.path.join(
