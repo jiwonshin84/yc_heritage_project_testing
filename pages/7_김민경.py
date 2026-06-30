@@ -20,7 +20,7 @@ DATA_PATH = os.path.join(
 
 df = pd.read_csv(DATA_PATH, encoding="utf-8-sig")
 
-st.title("🤖 AI 문화재 해설")
+st.title("💡 AI 문화재 해설")
 
 st.write("궁금한 문화재를 검색하거나 아래의 많이 찾는 문화재를 선택해 보세요.")
 
@@ -85,7 +85,7 @@ with col1:
 
 with col2:
 
-    st.subheader("🤖 AI 문화재 해설")
+    st.subheader("💡 AI 문화재 해설")
 
     explanation = f"""
 **{info['문화재명(국문)']}**은(는) **{info['시대그룹']}**에 만들어진 문화재입니다.
