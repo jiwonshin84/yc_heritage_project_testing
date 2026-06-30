@@ -61,12 +61,6 @@ heritage = st.selectbox(
     placeholder="예) 은해사"
 )
 
-heritage = st.selectbox(
-    "문화재를 검색하거나 선택하세요.",
-    heritage_list,
-    index=index,
-    placeholder="예) 은해사"
-)
 
 if heritage is None:
     st.info("문화재를 검색하거나 선택해 주세요.")
