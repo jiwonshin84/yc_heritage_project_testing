@@ -7,3 +7,4 @@ scikit-learn
 google-generativeai
 matplotlib
 seaborn
+koreanize-matplotlib
