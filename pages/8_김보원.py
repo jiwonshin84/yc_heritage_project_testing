@@ -12,14 +12,14 @@ st.set_page_config(
 )
 
 # ==========================================
-# 1. 한글 폰트 설정
+# 1. 한글 폰트 설정 (그래프 한글 깨짐 방지)
 # ==========================================
 if platform.system() == 'Windows':
     plt.rc('font', family='Malgun Gothic')
 elif platform.system() == 'Darwin':
     plt.rc('font', family='AppleGothic')
 else:
-    plt.rc('font', family='sans-serif')
+    plt.rc('font', family='NanumGothic')
 
 plt.rcParams['axes.unicode_minus'] = False
 
@@ -34,7 +34,7 @@ st.markdown("""
 """)
 
 # ==========================================
-# 3. CSV 불러오기 (data 폴더 안)
+# 3. CSV 불러오기
 # ==========================================
 csv_path = "data/OBS_ASOS_ANL_20260701101520_clean.csv"
 
@@ -53,9 +53,7 @@ st.dataframe(df)
 # ==========================================
 # 5. 위험 점수 계산
 # ==========================================
-# 문화재 훼손 위험도 간단 계산
-# (강수량 + 습도 + 최고기온 + 최저기온)
-
+# 문화재 훼손 위험도 계산
 df["risk_score"] = (
     (df["합계 강수량(mm)"] * 0.4) +
     (df["평균 상대습도(%)"] * 0.3) +
@@ -76,25 +74,29 @@ years = df["일시"].astype(str)
 axes[0, 0].plot(years, df["평균기온(°C)"], marker='o')
 axes[0, 0].set_title("연도별 평균기온")
 axes[0, 0].set_xlabel("연도")
-axes[0, 0].set_ylabel("°C")
+axes[0, 0].set_ylabel("기온 (°C)")
+axes[0, 0].grid(True)
 
 # 2. 최고기온
 axes[0, 1].plot(years, df["최고기온(°C)"], marker='o')
 axes[0, 1].set_title("연도별 최고기온")
 axes[0, 1].set_xlabel("연도")
-axes[0, 1].set_ylabel("°C")
+axes[0, 1].set_ylabel("기온 (°C)")
+axes[0, 1].grid(True)
 
 # 3. 강수량
 axes[1, 0].bar(years, df["합계 강수량(mm)"])
 axes[1, 0].set_title("연도별 합계 강수량")
 axes[1, 0].set_xlabel("연도")
-axes[1, 0].set_ylabel("mm")
+axes[1, 0].set_ylabel("강수량 (mm)")
+axes[1, 0].grid(True)
 
 # 4. 습도
 axes[1, 1].plot(years, df["평균 상대습도(%)"], marker='o')
 axes[1, 1].set_title("연도별 평균 상대습도")
 axes[1, 1].set_xlabel("연도")
-axes[1, 1].set_ylabel("%")
+axes[1, 1].set_ylabel("습도 (%)")
+axes[1, 1].grid(True)
 
 plt.tight_layout()
 st.pyplot(fig)
@@ -110,18 +112,18 @@ st.dataframe(df[["일시", "risk_score"]])
 most_risky = df.loc[df["risk_score"].idxmax()]
 
 st.success(
-    f"가장 위험했던 해는 **{most_risky['일시']}년** 입니다. "
+    f"가장 위험했던 해는 {most_risky['일시']}년입니다. "
     f"(위험 점수: {most_risky['risk_score']:.2f})"
 )
 
 # ==========================================
-# 8. 해석
+# 8. 분석 결과 해석
 # ==========================================
 st.subheader("🔍 분석 결과 해석")
 
 st.write("""
-- 강수량이 많을수록 문화재 표면 침식 가능성이 증가합니다.
-- 습도가 높으면 곰팡이 및 풍화 위험이 커집니다.
-- 최고기온이 높으면 열팽창으로 균열 가능성이 있습니다.
-- 최저기온이 낮으면 동결·융해 작용이 활발해질 수 있습니다.
+- 강수량이 많으면 문화재 표면 침식 가능성이 높아집니다.  
+- 습도가 높으면 곰팡이, 이끼, 미생물 증식 위험이 커집니다.  
+- 최고기온이 높으면 열팽창으로 균열이 발생할 수 있습니다.  
+- 최저기온이 낮으면 동결과 융해 작용으로 손상이 심해질 수 있습니다.  
 """)
