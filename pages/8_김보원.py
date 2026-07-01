@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import platform
-import matplotlib.pyplot as plt
-import koreanize_matplotlib
 
 # ==========================================
 # 0. 스트림릿 페이지 설정
