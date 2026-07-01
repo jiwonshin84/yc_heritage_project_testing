@@ -101,6 +101,142 @@ with col2:
 """
 
     st.info(explanation)
+
+
+    st.subheader("🏷 AI 핵심 키워드")
+
+    name = str(info["문화재명(국문)"])
+    period = str(info["시대그룹"])
+    material = str(info["재질"])
+    category = str(info["국가유산종목"])
+    exposure = str(info["노출형태"])
+
+    tag1, tag2, tag3, tag4 = st.columns(4)
+
+    with tag1:
+        st.markdown(
+            f"""
+            <div style='background-color:#EEF4FF; padding:15px; border-radius:15px; text-align:center;'>
+                <h4>📅 시대</h4>
+                <p><b>{period}</b></p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with tag2:
+        st.markdown(
+            f"""
+            <div style='background-color:#F1F8E9; padding:15px; border-radius:15px; text-align:center;'>
+                <h4>🪨 재질</h4>
+                <p><b>{material}</b></p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with tag3:
+        st.markdown(
+            f"""
+            <div style='background-color:#FFF8E1; padding:15px; border-radius:15px; text-align:center;'>
+                <h4>🏛 분류</h4>
+                <p><b>{category}</b></p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with tag4:
+        st.markdown(
+            f"""
+            <div style='background-color:#FCE4EC; padding:15px; border-radius:15px; text-align:center;'>
+                <h4>🌦 보존환경</h4>
+                <p><b>{exposure}</b></p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    st.divider()
+
+    st.subheader("👀 관람 포인트")
+
+    if "서원" in name:
+        point1 = "강학 공간과 제향 공간이 어떻게 배치되어 있는지 살펴보세요."
+        point2 = "조선 시대 선비들이 학문을 배우던 공간이라는 점에 주목해 보세요."
+        point3 = "주변 자연환경과 건축물이 어떻게 어우러지는지 관찰해 보세요."
+    elif "향교" in name:
+        point1 = "지방 교육 기관으로서 어떤 역할을 했는지 생각하며 살펴보세요."
+        point2 = "제사 공간과 교육 공간의 차이를 찾아보세요."
+        point3 = "지역 사회에서 향교가 가진 의미를 함께 생각해 보세요."
+    elif "사" in name or "암" in name:
+        point1 = "사찰 건축의 배치와 주변 산세의 관계를 살펴보세요."
+        point2 = "불교 문화가 건축물과 공간에 어떻게 반영되었는지 관찰해 보세요."
+        point3 = "목재와 석재가 사용된 부분을 구분해 보세요."
+    elif "비" in name:
+        point1 = "비석에 기록된 글이 당시의 역사 정보를 담고 있다는 점에 주목해 보세요."
+        point2 = "비석의 형태와 위치가 어떤 의미를 가지는지 살펴보세요."
+        point3 = "기록 문화재가 역사 연구에 왜 중요한지 생각해 보세요."
+    elif "탑" in name:
+        point1 = "탑의 층수와 형태가 균형 있게 구성되어 있는지 살펴보세요."
+        point2 = "불교 신앙과 조형미가 어떻게 표현되었는지 관찰해 보세요."
+        point3 = "석재가 오랜 시간 풍화되며 어떤 변화를 겪었는지 생각해 보세요."
+    else:
+        point1 = "문화재의 이름과 시대 정보를 함께 보며 역사적 배경을 생각해 보세요."
+        point2 = "주요 재질이 어떤 방식으로 보존 상태에 영향을 주는지 살펴보세요."
+        point3 = "현재 노출 형태가 문화재 관리에 어떤 의미를 가지는지 관찰해 보세요."
+
+    st.markdown(f"""
+    <div style='background-color:#FAFAFA; padding:18px; border-radius:15px; border:1px solid #E0E0E0;'>
+        <b>①</b> {point1}<br><br>
+        <b>②</b> {point2}<br><br>
+        <b>③</b> {point3}
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.divider()
+
+    st.subheader("✨ AI 한 줄 요약")
+
+    summary = f"{name}은(는) {period}의 역사와 문화를 보여 주는 {category}으로, {material} 재질과 {exposure} 환경을 고려한 보존 관리가 필요한 문화유산입니다."
+
+    st.info(summary)
+
+    st.divider()
+
+    st.subheader("📊 보존 체크")
+
+    material_score = 1
+    exposure_score = 1
+
+    if "목" in material:
+        material_score = 4
+    elif "석" in material:
+        material_score = 3
+    elif "금" in material:
+        material_score = 4
+    else:
+        material_score = 2
+
+    if "실외" in exposure:
+        exposure_score = 4
+    elif "반실외" in exposure:
+        exposure_score = 3
+    else:
+        exposure_score = 1
+
+    total_score = material_score + exposure_score
+
+    st.write("재질과 노출 형태를 바탕으로 보존 관리 필요도를 간단히 시각화했습니다.")
+
+    st.progress(min(total_score / 8, 1.0))
+
+    if total_score >= 7:
+        st.error("보존 관리 필요도: 높음")
+    elif total_score >= 5:
+        st.warning("보존 관리 필요도: 보통")
+    else:
+        st.success("보존 관리 필요도: 낮음")
     st.divider()
 
     st.subheader("🎓 수준별 해설")
