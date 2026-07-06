@@ -1,7 +1,6 @@
 import os
 import streamlit as st
 import pandas as pd
-import numpy as np
 
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.cluster import KMeans
@@ -12,17 +11,17 @@ from folium.plugins import MarkerCluster
 from streamlit_folium import st_folium
 
 # =====================================================
-# ⚙️ 설정
+# ⚙️ 기본 설정
 # =====================================================
 
 st.set_page_config(
-    page_title="문화재 AI 심층 분석",
+    page_title="문화재 AI 분석 시스템",
     page_icon="🏛",
     layout="wide"
 )
 
 # =====================================================
-# 🌑 DARK THEME
+# 🌑 DARK UI
 # =====================================================
 
 st.markdown("""
@@ -54,11 +53,16 @@ h1, h2, h3 {
     border-radius: 12px;
 }
 
+input, textarea {
+    background-color: #1c1f26 !important;
+    color: white !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
 # =====================================================
-# 📂 데이터
+# 📂 데이터 로드
 # =====================================================
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -86,7 +90,7 @@ features = [
 
 data = df[features].copy()
 
-for col in ["국가유산종목","시대그룹","재질","노출형태"]:
+for col in ["국가유산종목", "시대그룹", "재질", "노출형태"]:
     le = LabelEncoder()
     data[col] = le.fit_transform(data[col].astype(str))
 
@@ -96,7 +100,13 @@ X = scaler.fit_transform(data)
 kmeans = KMeans(n_clusters=4, random_state=42, n_init=10)
 df["Cluster"] = kmeans.fit_predict(X)
 
-labels = {0:"A그룹",1:"B그룹",2:"C그룹",3:"D그룹"}
+labels = {
+    0: "A그룹",
+    1: "B그룹",
+    2: "C그룹",
+    3: "D그룹"
+}
+
 df["군집"] = df["Cluster"].map(labels)
 
 # =====================================================
@@ -104,8 +114,7 @@ df["군집"] = df["Cluster"].map(labels)
 # =====================================================
 
 st.title("🏛 문화재 AI 심층 분석 시스템")
-
-st.caption("군집 + 공간 + 통계 기반 문화재 구조 분석")
+st.caption("검색 + 군집 + 공간 + 구조 분석")
 
 st.divider()
 
@@ -113,105 +122,106 @@ st.divider()
 # 📊 KPI
 # =====================================================
 
-c1,c2,c3,c4 = st.columns(4)
+c1, c2, c3, c4 = st.columns(4)
 
 c1.metric("전체 문화재", len(df))
 c2.metric("평균 연령", f"{int(df['문화재연령'].mean())}년")
 c3.metric("군집 수", 4)
-c4.metric("최대 군집", df["군집"].value_counts().idxmax())
+c4.metric("최다 군집", df["군집"].value_counts().idxmax())
 
 st.divider()
 
 # =====================================================
-# 🔍 검색 + 필터
+# 🔍 검색 (자동완성 포함)
 # =====================================================
 
-st.subheader("🔍 문화재 탐색 + 분석 필터")
+st.subheader("🔍 문화재 검색")
 
-keyword = st.text_input("문화재 검색 (예: 석탑, 불상, 사찰)")
-
-cluster_filter = st.selectbox(
-    "군집 선택",
-    ["전체","A그룹","B그룹","C그룹","D그룹"]
-)
+keyword = st.text_input("", placeholder="예: 은, 불상, 사찰, 석탑...")
 
 show = df.copy()
 
+# ---------------- 연관검색 ---------------- #
 if keyword:
-    show = show[show["문화재명(국문)"].str.contains(keyword, na=False)]
 
-if cluster_filter != "전체":
-    show = show[show["군집"] == cluster_filter]
+    suggestions = df[
+        df["문화재명(국문)"].str.contains(keyword, na=False)
+    ]["문화재명(국문)"].head(5).tolist()
 
-st.divider()
+    if suggestions:
+        st.markdown("### 💡 연관 검색 결과")
+
+        for s in suggestions:
+            if st.button(f"📌 {s}"):
+                keyword = s
+
+# ---------------- 검색 필터 ---------------- #
+if keyword:
+    show = df[df["문화재명(국문)"].str.contains(keyword, na=False)]
 
 # =====================================================
-# 📊 군집 분석 (심화)
+# 🧠 검색 결과 AI 분석
 # =====================================================
 
-st.header("📊 군집 구조 분석")
+if keyword and len(show) > 0:
 
-col1, col2 = st.columns(2)
+    item = show.iloc[0]
 
-with col1:
+    st.markdown("## 🧠 AI 문화재 특징 분석")
 
-    cluster_count = show["군집"].value_counts().sort_index()
+    st.info(f"""
+### 📌 {item['문화재명(국문)']}
 
-    fig = px.bar(
-        cluster_count,
-        x=cluster_count.index,
-        y=cluster_count.values,
-        text=cluster_count.values,
-        title="군집 분포"
-    )
+- 🏛 군집: {item['군집']}
+- 📅 연령: {item['문화재연령']}년
+- 🪨 재질: {item['재질']}
+- 🏞 노출 형태: {item['노출형태']}
 
-    fig.update_layout(template="plotly_dark")
+---
 
-    st.plotly_chart(fig, use_container_width=True)
+### 🔎 AI 해석
 
-    st.info("""
-📌 의미
+이 문화재는 **{item['군집']}** 군집에 속하며,
+동일 군집 내 문화재들과 구조적으로 유사한 특성을 가집니다.
 
-군집 간 데이터 분포 불균형을 확인하는 그래프
-
-→ 특정 군집 집중 여부 확인  
-→ 문화재 유형 편향 분석 가능
-""")
-
-with col2:
-
-    age = show.groupby("군집")["문화재연령"].mean().reset_index()
-
-    fig = px.bar(
-        age,
-        x="군집",
-        y="문화재연령",
-        text_auto=".1f",
-        title="군집별 평균 연령"
-    )
-
-    fig.update_layout(template="plotly_dark")
-
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.info("""
-📌 의미
-
-군집별 역사적 깊이 비교
-
-→ 오래된 문화재가 어느 군집에 집중되는지 분석  
-→ 역사 가치 구조 파악
+→ KMeans 기반으로 유형이 자동 분류된 결과  
+→ 문화재의 시대적/물리적 특성이 반영됨
 """)
 
 st.divider()
 
 # =====================================================
-# 🧠 심화 해석 (핵심)
+# 🪨 군집별 재질 분석 (핵심 그래프)
 # =====================================================
 
-st.header("🧠 AI 군집 해석")
+st.header("🪨 군집별 재질 구조 분석")
 
-for g in ["A그룹","B그룹","C그룹","D그룹"]:
+material = pd.crosstab(
+    show["군집"],
+    show["재질"]
+)
+
+fig = px.bar(
+    material,
+    title="군집별 재질 분포",
+    barmode="group"
+)
+
+fig.update_layout(template="plotly_dark")
+
+st.plotly_chart(fig, use_container_width=True)
+
+st.divider()
+
+# =====================================================
+# 🧠 군집별 특징 요약
+# =====================================================
+
+st.header("🧠 군집 구조 해석")
+
+groups = ["A그룹","B그룹","C그룹","D그룹"]
+
+for g in groups:
 
     temp = show[show["군집"] == g]
 
@@ -228,20 +238,17 @@ for g in ["A그룹","B그룹","C그룹","D그룹"]:
     st.info(f"""
 🔎 해석
 
-{g}는 위 특성으로 볼 때
-문화재의 성격이 동일한 유형끼리 군집화된 결과이다.
-
-→ KMeans가 단순 위치가 아니라
-→ 구조적 유사성을 기반으로 분류했음을 의미
+{g}는 유사한 속성을 가진 문화재들이 모인 군집으로,
+KMeans 알고리즘이 구조적 유사성을 기반으로 분류한 결과이다.
 """)
 
 st.divider()
 
 # =====================================================
-# 🗺 공간 분석 (핵심 업그레이드)
+# 🗺 지도 분석
 # =====================================================
 
-st.header("🗺 공간 분포 분석 (핵심)")
+st.header("🗺 문화재 공간 분포 분석")
 
 m = folium.Map(
     location=[show["위도"].mean(), show["경도"].mean()],
@@ -263,43 +270,19 @@ for _, r in show.iterrows():
     folium.Marker(
         location=[r["위도"], r["경도"]],
         tooltip=r["문화재명(국문)"],
-        popup=f"""
-        <b>{r['문화재명(국문)']}</b><br>
-        군집: {r['군집']}<br>
-        연령: {r['문화재연령']}년
-        """,
+        popup=f"{r['문화재명(국문)']}<br>{r['군집']}",
         icon=folium.Icon(color=color[r["군집"]])
     ).add_to(cluster_map)
 
 st_folium(m, use_container_width=True, height=600)
 
-st.info("""
-📌 공간 해석
-
-이 지도는 단순 위치 표시가 아니라
-
-→ 군집별 공간적 분포 구조 분석
-
-핵심 질문:
-- 특정 군집이 특정 지역에 집중되어 있는가?
-- 고가치 문화재는 어디에 분포하는가?
-- 관리 취약 지역은 어디인가?
-""")
-
-st.success("""
-📌 최종 결론
-
-문화재 데이터는 단순한 개별 정보가 아니라
-공간 + 속성 + 군집 구조로 해석해야 한다.
-
-→ 본 분석은 문화재 관리 전략 수립에 활용 가능하다.
-""")
+st.divider()
 
 # =====================================================
-# 📋 데이터
+# 📋 데이터 테이블
 # =====================================================
 
-st.header("📋 원본 데이터")
+st.header("📋 문화재 데이터")
 
 st.dataframe(
     show[
@@ -307,3 +290,26 @@ st.dataframe(
     ],
     use_container_width=True
 )
+
+st.divider()
+
+# =====================================================
+# 📌 최종 결론
+# =====================================================
+
+st.header("📌 분석 결론")
+
+st.success(f"""
+✔ 총 {len(show)}개의 문화재 분석
+
+✔ KMeans 기반 4개 군집 구조 확인
+
+✔ 검색 기반 문화재 개별 특징 분석 가능
+
+✔ 군집별 재질 구조 차이 존재
+
+✔ 공간 분포까지 포함한 다차원 분석 시스템
+
+→ 문화재는 단순 객체가 아니라
+→ 공간 + 속성 + 군집 구조로 해석해야 함
+""")
