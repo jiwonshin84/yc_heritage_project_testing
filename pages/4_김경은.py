@@ -13,8 +13,8 @@ st.title("🤖 영천 환경 군집분석 (AI)")
 # 데이터 불러오기
 # ======================
 
-weather = pd.read_csv("data/[2016_2025] yeongcheon_weather_daily.csv")
-air = pd.read_csv("data/[2019_2025] air_quality.csv")
+weather = pd.read_csv("data/processed/[2016_2025] yeongcheon_weather_daily.csv")
+air = pd.read_csv("data/processed/[2019_2025] air_quality.csv")
 
 weather["date"] = pd.to_datetime(weather["date"])
 air["date"] = pd.to_datetime(air["date"])
