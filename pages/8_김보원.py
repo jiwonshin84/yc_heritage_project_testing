@@ -1,129 +1,167 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import platform
+import numpy as np
+import requests
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
 
-# ==========================================
-# 0. 스트림릿 페이지 설정
-# ==========================================
+# ---------------------------------------------------------
+# 1. 페이지 기본 설정 및 제목 (김보원 영역)
+# ---------------------------------------------------------
 st.set_page_config(
-    page_title="영천 문화재 환경 위해요소 분석",
+    page_title="위험도 예측 시스템 - 김보원",
+    page_icon="🌤️",
     layout="wide"
 )
 
-# ==========================================
-# 1. 한글 폰트 설정 (그래프 한글 깨짐 방지)
-# ==========================================
-if platform.system() == 'Windows':
-    plt.rc('font', family='Malgun Gothic')
-elif platform.system() == 'Darwin':
-    plt.rc('font', family='AppleGothic')
-else:
-    plt.rc('font', family='NanumGothic')
+st.title("🌤️ 기상청 공공데이터 기반 위험도 예측 시스템")
+st.caption("담당: 김보원")
+st.markdown("---")
 
-plt.rcParams['axes.unicode_minus'] = False
+# ---------------------------------------------------------
+# 2. 사이드바 - 설정 및 API 키 입력
+# ---------------------------------------------------------
+st.sidebar.header("⚙️ 프로젝트 설정")
+api_key = st.sidebar.text_input("기상청 API Key 입력", type="password", help="공공데이터포털에서 발급받은 Decoding API Key를 입력하세요.")
 
-# ==========================================
-# 2. 대시보드 제목
-# ==========================================
-st.title("🏛️ 영천 문화재 환경 위해요소 및 훼손 위험 분석")
+# ---------------------------------------------------------
+# 3. 공공데이터 수집 함수 (기상청 API)
+# ---------------------------------------------------------
+@st.cache_data
+def fetch_weather_data(service_key):
+    """
+    기상청 API로부터 데이터를 수집하는 함수
+    """
+    if not service_key:
+        return None
 
-st.markdown("""
-이 대시보드는 영천 지역의 기상청 환경 데이터(2020~2025)를 활용하여  
-문화재가 어떤 환경적 위험에 노출되는지 분석합니다.
-""")
+    # 기상청 단기예보/초단기실황 API URL
+    url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
+    params = {
+        'serviceKey': service_key,
+        'pageNo': '1',
+        'numOfRows': '1000',
+        'dataType': 'JSON',
+        'base_date': '20260811', # 날짜 설정
+        'base_time': '0600',
+        'nx': '55',
+        'ny': '127'
+    }
 
-# ==========================================
-# 3. CSV 불러오기
-# ==========================================
-csv_path = "data/OBS_ASOS_ANL_20260701101520_clean.csv"
+    try:
+        response = requests.get(url, params=params, timeout=5)
+        if response.status_code == 200:
+            res_json = response.json()
+            items = res_json['response']['body']['items']['item']
+            df = pd.DataFrame(items)
+            return df
+    except Exception as e:
+        st.error(f"API 데이터 수집 중 오류 발생: {e}")
+        return None
 
-try:
-    df = pd.read_csv(csv_path, encoding="utf-8")
-except FileNotFoundError:
-    st.error("⚠️ CSV 파일이 data 폴더 안에 없습니다.")
-    st.stop()
+# ---------------------------------------------------------
+# 4. 데이터셋 생성 및 모의 데이터 로드
+# ---------------------------------------------------------
+@st.cache_data
+def load_risk_dataset():
+    """
+    위험도 예측 모델 학습을 위한 데이터 구축 (기온, 습도, 강수량, 풍속 -> 위험도 레벨)
+    """
+    np.random.seed(42)
+    n_samples = 300
+    
+    temperature = np.random.uniform(15, 38, n_samples)  # 기온
+    humidity = np.random.uniform(30, 95, n_samples)     # 습도
+    rainfall = np.random.uniform(0, 100, n_samples)     # 강수량
+    wind_speed = np.random.uniform(0.5, 15, n_samples)  # 풍속
 
-# ==========================================
-# 4. 데이터 확인
-# ==========================================
-st.subheader("📂 불러온 데이터 확인")
-st.dataframe(df)
+    # 위험도 산출 기준 (0: 안전, 1: 주의, 2: 위험)
+    risk_score = (temperature * 0.3) + (humidity * 0.2) + (rainfall * 0.4) + (wind_speed * 0.1)
+    risk_level = np.where(risk_score > 60, 2, np.where(risk_score > 40, 1, 0))
 
-# ==========================================
-# 5. 위험 점수 계산
-# ==========================================
-# 문화재 훼손 위험도 계산
-df["risk_score"] = (
-    (df["합계 강수량(mm)"] * 0.4) +
-    (df["평균 상대습도(%)"] * 0.3) +
-    (df["최고기온(°C)"] * 0.2) +
-    (abs(df["최저기온(°C)"]) * 0.1)
-)
+    df = pd.DataFrame({
+        '기온(°C)': np.round(temperature, 1),
+        '습도(%)': np.round(humidity, 1),
+        '강수량(mm)': np.round(rainfall, 1),
+        '풍속(m/s)': np.round(wind_speed, 1),
+        '위험도_단계': risk_level
+    })
+    return df
 
-# ==========================================
-# 6. 그래프 시각화
-# ==========================================
-st.subheader("📈 영천 기후 데이터 변화 분석 (2020~2025)")
+# ---------------------------------------------------------
+# 5. 메인 화면 탭 구성 (수집 -> 구축/학습 -> 예측)
+# ---------------------------------------------------------
+tab1, tab2, tab3 = st.tabs(["📡 1. 공공데이터 수집", "📊 2. 데이터 구축 및 모델 학습", "🚨 3. 실시간 위험도 예측"])
 
-fig, axes = plt.subplots(2, 2, figsize=(12, 8))
+# --- TAB 1: 공공데이터 수집 ---
+with tab1:
+    st.subheader("공공데이터 수집 (기상청 API)")
+    
+    if api_key:
+        with st.spinner("기상청 API 데이터 불러오는 중..."):
+            api_data = fetch_weather_data(api_key)
+            if api_data is not None:
+                st.success("데이터 수집 성공!")
+                st.dataframe(api_data, use_container_width=True)
+            else:
+                st.warning("API 응답이 없거나 키가 올바르지 않아 기본 설정을 확인해주세요.")
+    else:
+        st.info("💡 왼쪽 사이드바에 기상청 API 키를 입력하면 실제 데이터를 가져옵니다.")
 
-years = df["일시"].astype(str)
+# --- TAB 2: 데이터 구축 및 모델 학습 ---
+with tab2:
+    st.subheader("위험도 예측 데이터 구축 및 머신러닝 모델 학습")
+    
+    df_risk = load_risk_dataset()
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.markdown("**📌 구축된 학습 데이터셋 (상위 10개)**")
+        st.dataframe(df_risk.head(10), use_container_width=True)
+    
+    with col2:
+        st.markdown("**🤖 모델 학습 실행 (Random Forest)**")
+        
+        X = df_risk[['기온(°C)', '습도(%)', '강수량(mm)', '풍속(m/s)']]
+        y = df_risk['위험도_단계']
+        
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        model = RandomForestClassifier(n_estimators=100, random_state=42)
+        model.fit(X_train, y_train)
+        
+        y_pred = model.predict(X_test)
+        acc = accuracy_score(y_test, y_pred)
+        
+        st.metric(label="모델 정확도(Accuracy)", value=f"{acc * 100:.1f}%")
+        st.success("모델 학습 완료!")
 
-# 1. 평균기온
-axes[0, 0].plot(years, df["평균기온(°C)"], marker='o')
-axes[0, 0].set_title("연도별 평균기온")
-axes[0, 0].set_xlabel("연도")
-axes[0, 0].set_ylabel("기온 (°C)")
-axes[0, 0].grid(True)
-
-# 2. 최고기온
-axes[0, 1].plot(years, df["최고기온(°C)"], marker='o')
-axes[0, 1].set_title("연도별 최고기온")
-axes[0, 1].set_xlabel("연도")
-axes[0, 1].set_ylabel("기온 (°C)")
-axes[0, 1].grid(True)
-
-# 3. 강수량
-axes[1, 0].bar(years, df["합계 강수량(mm)"])
-axes[1, 0].set_title("연도별 합계 강수량")
-axes[1, 0].set_xlabel("연도")
-axes[1, 0].set_ylabel("강수량 (mm)")
-axes[1, 0].grid(True)
-
-# 4. 습도
-axes[1, 1].plot(years, df["평균 상대습도(%)"], marker='o')
-axes[1, 1].set_title("연도별 평균 상대습도")
-axes[1, 1].set_xlabel("연도")
-axes[1, 1].set_ylabel("습도 (%)")
-axes[1, 1].grid(True)
-
-plt.tight_layout()
-st.pyplot(fig)
-
-# ==========================================
-# 7. 위험도 결과 출력
-# ==========================================
-st.subheader("⚠️ 연도별 문화재 훼손 위험 점수")
-
-st.dataframe(df[["일시", "risk_score"]])
-
-# 가장 위험한 해 찾기
-most_risky = df.loc[df["risk_score"].idxmax()]
-
-st.success(
-    f"가장 위험했던 해는 {most_risky['일시']}년입니다. "
-    f"(위험 점수: {most_risky['risk_score']:.2f})"
-)
-
-# ==========================================
-# 8. 분석 결과 해석
-# ==========================================
-st.subheader("🔍 분석 결과 해석")
-
-st.write("""
-- 강수량이 많으면 문화재 표면 침식 가능성이 높아집니다.  
-- 습도가 높으면 곰팡이, 이끼, 미생물 증식 위험이 커집니다.  
-- 최고기온이 높으면 열팽창으로 균열이 발생할 수 있습니다.  
-- 최저기온이 낮으면 동결과 융해 작용으로 손상이 심해질 수 있습니다.  
-""")
+# --- TAB 3: 실시간 위험도 예측 ---
+with tab3:
+    st.subheader("사용자 입력 기반 위험도 예측해보기")
+    
+    st.write("기상 조건 변수를 설정하고 현재 환경의 위험도를 예측해 보세요.")
+    
+    col_input1, col_input2 = st.columns(2)
+    with col_input1:
+        input_temp = st.slider("기온 (°C)", min_value=-10.0, max_value=40.0, value=28.0, step=0.5)
+        input_hum = st.slider("습도 (%)", min_value=0.0, max_value=100.0, value=65.0, step=1.0)
+    with col_input2:
+        input_rain = st.slider("강수량 (mm)", min_value=0.0, max_value=150.0, value=20.0, step=1.0)
+        input_wind = st.slider("풍속 (m/s)", min_value=0.0, max_value=30.0, value=3.5, step=0.5)
+        
+    if st.button("위험도 예측 실행 🚀", use_container_width=True):
+        input_data = np.array([[input_temp, input_hum, input_rain, input_wind]])
+        prediction = model.predict(input_data)[0]
+        
+        st.markdown("---")
+        st.markdown("### 📋 예측 결과")
+        
+        if prediction == 0:
+            st.success("🟢 **[안전]** 현재 기상 조건에서의 위험도가 낮습니다.")
+        elif prediction == 1:
+            st.warning("🟡 **[주의]** 야외 활동 시 기상 변화에 주의하세요.")
+        else:
+            st.error("🔴 **[위험]** 높은 위험도가 감지되었습니다. 안전에 유의하세요!")
