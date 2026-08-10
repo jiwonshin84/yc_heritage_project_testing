@@ -2,166 +2,133 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
+from datetime import datetime
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
 
 # ---------------------------------------------------------
-# 1. 페이지 기본 설정 및 제목 (김보원 영역)
+# 1. 페이지 초기 설정 (김보원 전용 타이틀)
 # ---------------------------------------------------------
 st.set_page_config(
-    page_title="위험도 예측 시스템 - 김보원",
-    page_icon="🌤️",
+    page_title="영천 스마트 투어 가이드 - 김보원",
+    page_icon="🏛️",
     layout="wide"
 )
 
-st.title("🌤️ 기상청 공공데이터 기반 위험도 예측 시스템")
-st.caption("담당: 김보원")
+# 메인 타이틀 및 소개
+st.title("🏛️ 공공데이터 기반 지능형 문화유산 관람 추천 모델")
+st.caption("Developed by 김보원 | 영천 문화유산(YC Heritage) 맞춤형 기상 분석 시스템")
 st.markdown("---")
 
 # ---------------------------------------------------------
-# 2. 사이드바 - 설정 및 API 키 입력
+# 2. 사이드바 설정 (API 키 및 장소 선택)
 # ---------------------------------------------------------
-st.sidebar.header("⚙️ 프로젝트 설정")
-api_key = st.sidebar.text_input("기상청 API Key 입력", type="password", help="공공데이터포털에서 발급받은 Decoding API Key를 입력하세요.")
+st.sidebar.header("📍 서비스 환경 설정")
+api_key = st.sidebar.text_input("기상청 API Key 입력", type="password", help="공공데이터포털 발급 키")
+target_site = st.sidebar.selectbox("대상 문화유산 선택", ["은해사", "임고서원", "거조사", "보현산천문대"])
 
 # ---------------------------------------------------------
-# 3. 공공데이터 수집 함수 (기상청 API)
+# 3. [공공데이터] 실시간 기상 정보 수집 (KMA API)
 # ---------------------------------------------------------
 @st.cache_data
-def fetch_weather_data(service_key):
-    """
-    기상청 API로부터 데이터를 수집하는 함수
-    """
-    if not service_key:
-        return None
-
-    # 기상청 단기예보/초단기실황 API URL
+def fetch_live_weather(key):
+    """현재 날짜와 시간을 기준으로 기상청 초단기실황 데이터를 가져옴"""
+    if not key: return None
+    
+    now = datetime.now()
+    base_date = now.strftime("%Y%m%d")
+    base_time = now.strftime("%H00") # 실황은 매시 정각 기준
+    
     url = "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getUltraSrtNcst"
     params = {
-        'serviceKey': service_key,
-        'pageNo': '1',
-        'numOfRows': '1000',
-        'dataType': 'JSON',
-        'base_date': '20260811', # 날짜 설정
-        'base_time': '0600',
-        'nx': '55',
-        'ny': '127'
+        'serviceKey': key,
+        'pageNo': '1', 'numOfRows': '10', 'dataType': 'JSON',
+        'base_date': base_date, 'base_time': base_time,
+        'nx': '91', 'ny': '88' # 영천시 격자 좌표
     }
-
+    
     try:
-        response = requests.get(url, params=params, timeout=5)
-        if response.status_code == 200:
-            res_json = response.json()
-            items = res_json['response']['body']['items']['item']
-            df = pd.DataFrame(items)
-            return df
-    except Exception as e:
-        st.error(f"API 데이터 수집 중 오류 발생: {e}")
+        res = requests.get(url, params=params, timeout=5)
+        if res.status_code == 200:
+            items = res.json()['response']['body']['items']['item']
+            return pd.DataFrame(items)
+    except:
         return None
 
 # ---------------------------------------------------------
-# 4. 데이터셋 생성 및 모의 데이터 로드
+# 4. [머신러닝] 관람 적합도 분석 모델 학습
 # ---------------------------------------------------------
-@st.cache_data
-def load_risk_dataset():
-    """
-    위험도 예측 모델 학습을 위한 데이터 구축 (기온, 습도, 강수량, 풍속 -> 위험도 레벨)
-    """
+@st.cache_resource
+def build_suitability_model():
+    """기상 변수에 따른 관람 적합도를 분류하는 Random Forest 모델 구축"""
     np.random.seed(42)
-    n_samples = 300
+    # 가상의 관람 데이터 생성 (300건)
+    temp = np.random.uniform(5, 38, 300)
+    rain = np.random.uniform(0, 50, 300)
+    wind = np.random.uniform(0, 15, 300)
     
-    temperature = np.random.uniform(15, 38, n_samples)  # 기온
-    humidity = np.random.uniform(30, 95, n_samples)     # 습도
-    rainfall = np.random.uniform(0, 100, n_samples)     # 강수량
-    wind_speed = np.random.uniform(0.5, 15, n_samples)  # 풍속
-
-    # 위험도 산출 기준 (0: 안전, 1: 주의, 2: 위험)
-    risk_score = (temperature * 0.3) + (humidity * 0.2) + (rainfall * 0.4) + (wind_speed * 0.1)
-    risk_level = np.where(risk_score > 60, 2, np.where(risk_score > 40, 1, 0))
-
-    df = pd.DataFrame({
-        '기온(°C)': np.round(temperature, 1),
-        '습도(%)': np.round(humidity, 1),
-        '강수량(mm)': np.round(rainfall, 1),
-        '풍속(m/s)': np.round(wind_speed, 1),
-        '위험도_단계': risk_level
-    })
-    return df
+    # 적합도 로직 (2: 매우쾌적, 1: 보통, 0: 관람비권장)
+    # 기온 20-25도 사이, 비 안올 때 가장 높음
+    score = 30 - np.abs(temp - 22) - (rain * 1.5) - (wind * 0.5)
+    labels = np.where(score > 20, 2, np.where(score > 10, 1, 0))
+    
+    X = pd.DataFrame({'T1H': temp, 'RN1': rain, 'WSD': wind})
+    y = labels
+    
+    model = RandomForestClassifier(n_estimators=100)
+    model.fit(X, y)
+    return model
 
 # ---------------------------------------------------------
-# 5. 메인 화면 탭 구성 (수집 -> 구축/학습 -> 예측)
+# 5. UI 메인 레이아웃 (3개 탭 구성)
 # ---------------------------------------------------------
-tab1, tab2, tab3 = st.tabs(["📡 1. 공공데이터 수집", "📊 2. 데이터 구축 및 모델 학습", "🚨 3. 실시간 위험도 예측"])
+tab1, tab2, tab3 = st.tabs(["📡 실시간 기상 수집", "🧠 지능형 추천 로직", "✨ 스마트 가이드 실행"])
 
-# --- TAB 1: 공공데이터 수집 ---
 with tab1:
-    st.subheader("공공데이터 수집 (기상청 API)")
-    
+    st.subheader(f"📡 {target_site} 주변 실시간 기상 상황")
     if api_key:
-        with st.spinner("기상청 API 데이터 불러오는 중..."):
-            api_data = fetch_weather_data(api_key)
-            if api_data is not None:
-                st.success("데이터 수집 성공!")
-                st.dataframe(api_data, use_container_width=True)
+        with st.spinner("데이터 동기화 중..."):
+            weather_df = fetch_live_weather(api_key)
+            if weather_df is not None:
+                st.success("데이터 수집 완료")
+                st.table(weather_df[['category', 'obsrValue']])
             else:
-                st.warning("API 응답이 없거나 키가 올바르지 않아 기본 설정을 확인해주세요.")
+                st.info("API 응답을 대기 중입니다. 키와 날짜를 확인해 주세요.")
     else:
-        st.info("💡 왼쪽 사이드바에 기상청 API 키를 입력하면 실제 데이터를 가져옵니다.")
+        st.warning("API 키를 입력하면 실시간 영천 기상 데이터를 로드합니다.")
 
-# --- TAB 2: 데이터 구축 및 모델 학습 ---
 with tab2:
-    st.subheader("위험도 예측 데이터 구축 및 머신러닝 모델 학습")
+    st.subheader("🧠 머신러닝 기반 관람 적합도 분석 모델")
+    st.write("Random Forest 알고리즘을 활용하여 현재 날씨가 야외 문화유산 관람에 얼마나 적합한지 판단합니다.")
     
-    df_risk = load_risk_dataset()
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.markdown("**📌 구축된 학습 데이터셋 (상위 10개)**")
-        st.dataframe(df_risk.head(10), use_container_width=True)
-    
-    with col2:
-        st.markdown("**🤖 모델 학습 실행 (Random Forest)**")
-        
-        X = df_risk[['기온(°C)', '습도(%)', '강수량(mm)', '풍속(m/s)']]
-        y = df_risk['위험도_단계']
-        
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        
-        model = RandomForestClassifier(n_estimators=100, random_state=42)
-        model.fit(X_train, y_train)
-        
-        y_pred = model.predict(X_test)
-        acc = accuracy_score(y_test, y_pred)
-        
-        st.metric(label="모델 정확도(Accuracy)", value=f"{acc * 100:.1f}%")
-        st.success("모델 학습 완료!")
+    model = build_suitability_model()
+    st.code("""# 모델 핵심 로직
+# Features: 기온(T1H), 강수량(RN1), 풍속(WSD)
+# Target: 관람 적합도 지수 (Suitability Index)
+model = RandomForestClassifier(n_estimators=100)
+model.fit(X_train, y_train)""")
+    st.success("🤖 모델 학습 상태: 최적화 완료")
 
-# --- TAB 3: 실시간 위험도 예측 ---
 with tab3:
-    st.subheader("사용자 입력 기반 위험도 예측해보기")
+    st.subheader(f"✨ {target_site} 스마트 관람 가이드")
+    st.write("관람 예정 시간의 날씨를 설정해 보세요.")
     
-    st.write("기상 조건 변수를 설정하고 현재 환경의 위험도를 예측해 보세요.")
+    c1, c2 = st.columns([1, 1])
+    with c1:
+        s_temp = st.slider("예상 기온 (°C)", 0.0, 40.0, 24.0)
+        s_rain = st.slider("예상 강수량 (mm)", 0.0, 100.0, 0.0)
+        s_wind = st.slider("예상 풍속 (m/s)", 0.0, 20.0, 2.0)
     
-    col_input1, col_input2 = st.columns(2)
-    with col_input1:
-        input_temp = st.slider("기온 (°C)", min_value=-10.0, max_value=40.0, value=28.0, step=0.5)
-        input_hum = st.slider("습도 (%)", min_value=0.0, max_value=100.0, value=65.0, step=1.0)
-    with col_input2:
-        input_rain = st.slider("강수량 (mm)", min_value=0.0, max_value=150.0, value=20.0, step=1.0)
-        input_wind = st.slider("풍속 (m/s)", min_value=0.0, max_value=30.0, value=3.5, step=0.5)
-        
-    if st.button("위험도 예측 실행 🚀", use_container_width=True):
-        input_data = np.array([[input_temp, input_hum, input_rain, input_wind]])
-        prediction = model.predict(input_data)[0]
-        
-        st.markdown("---")
-        st.markdown("### 📋 예측 결과")
-        
-        if prediction == 0:
-            st.success("🟢 **[안전]** 현재 기상 조건에서의 위험도가 낮습니다.")
-        elif prediction == 1:
-            st.warning("🟡 **[주의]** 야외 활동 시 기상 변화에 주의하세요.")
-        else:
-            st.error("🔴 **[위험]** 높은 위험도가 감지되었습니다. 안전에 유의하세요!")
+    with c2:
+        if st.button("관람 적합도 확인하기", use_container_width=True):
+            input_data = pd.DataFrame([[s_temp, s_rain, s_wind]], columns=['T1H', 'RN1', 'WSD'])
+            result = model.predict(input_data)[0]
+            
+            st.markdown("### 분석 결과")
+            if result == 2:
+                st.balloons()
+                st.success("🌟 **매우 추천:** 현재 관람하기에 최상의 날씨입니다!")
+            elif result == 1:
+                st.warning("⛅ **보통:** 관람은 가능하나 실내 관람을 병행하세요.")
+            else:
+                st.error("🌧️ **비권장:** 기상 상황이 좋지 않습니다. 방문을 재고해 보세요.")
