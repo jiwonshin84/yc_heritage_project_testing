@@ -1,9 +1,11 @@
 streamlit>=1.32.0
 pandas
+numpy
+scikit-learn
+requests
 plotly
 folium
 streamlit-folium
-scikit-learn
 google-generativeai
 matplotlib
 seaborn
