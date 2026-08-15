@@ -6,6 +6,10 @@ import os
 import time
 import requests
 import pandas as pd
+import streamlit as st  # Streamlit 라이브러리 추가
+
+# 화면 타이틀 설정
+st.title("☀️ 영천 기상 & 미세먼지 데이터 수집기")
 
 
 # ============================================================
@@ -25,6 +29,7 @@ ASOS_URL = (
 
 # 영천 관측소
 STN_ID = "281"
+
 
 # ============================================================
 # 2. 연도별 기상 데이터 수집 함수
@@ -88,27 +93,34 @@ def fetch_asos_year(year):
 # 3. 전체 기상 데이터 수집
 # ============================================================
 
-print("=" * 60)
-print("영천 기상 데이터 수집 시작")
-print("=" * 60)
+st.subheader("1. 기상 데이터 수집 중...")
+progress_bar = st.progress(0)
+status_text = st.empty()
 
 all_years = []
+years = list(range(2016, 2026))
 
+for idx, year in enumerate(years):
 
-for year in range(2016, 2026):
-
+    status_text.text(f"⏳ {year}년 기상 데이터 수집 중...")
     df_year = fetch_asos_year(year)
 
     if not df_year.empty:
         all_years.append(df_year)
 
+    # 진행 바 업데이트
+    progress_bar.progress((idx + 1) / len(years))
+
     # API 과부하 방지
     time.sleep(0.5)
+
+status_text.text("✅ 연도별 기상 데이터 수집 완료!")
 
 
 # 데이터가 하나도 없는 경우
 if not all_years:
 
+    st.error("기상 데이터를 하나도 가져오지 못했습니다.")
     raise ValueError(
         "기상 데이터를 하나도 가져오지 못했습니다."
     )
@@ -117,13 +129,6 @@ if not all_years:
 weather_raw = pd.concat(
     all_years,
     ignore_index=True
-)
-
-
-print()
-print(
-    f"전체 기상 데이터 : "
-    f"{len(weather_raw)}건"
 )
 
 
@@ -234,15 +239,6 @@ weather["rainfall"] = (
 )
 
 
-print()
-print("강수량 결측 처리 완료")
-
-print(
-    "강수량 결측 개수 :",
-    weather["rainfall"].isna().sum()
-)
-
-
 # ============================================================
 # 8. 정렬 및 결측 제거
 # ============================================================
@@ -255,15 +251,11 @@ weather = (
 )
 
 
-print()
-print("기상 데이터 정제 완료")
-
-print(weather.head())
-
-
 # ============================================================
 # 9. 미세먼지 데이터 불러오기
 # ============================================================
+
+st.subheader("2. 미세먼지 데이터 불러오기")
 
 air_url = (
     "https://docs.google.com/spreadsheets/d/"
@@ -280,6 +272,7 @@ try:
 
 except Exception as e:
 
+    st.error(f"미세먼지 데이터를 불러오지 못했습니다 : {e}")
     raise ValueError(
         f"미세먼지 데이터를 불러오지 못했습니다 : {e}"
     )
@@ -289,15 +282,6 @@ air["date"] = pd.to_datetime(
     air["date"],
     errors="coerce"
 )
-
-
-print()
-print(
-    f"미세먼지 데이터 : "
-    f"{len(air)}건"
-)
-
-print(air.head())
 
 
 # ============================================================
@@ -313,27 +297,6 @@ df = pd.merge(
     on="date",
 
     how="left"
-)
-
-
-print()
-print(
-    f"기상 + 미세먼지 병합 완료 : "
-    f"{len(df)}건"
-)
-
-
-# ============================================================
-# 11. 결측치 확인
-# ============================================================
-
-print()
-print("=" * 60)
-print("결측치 확인")
-print("=" * 60)
-
-print(
-    df.isna().sum()
 )
 
 
@@ -365,19 +328,19 @@ df.to_csv(
 
 
 # ============================================================
-# 13. 완료
+# 13. 완료 및 Streamlit 화면 출력
 # ============================================================
 
-print()
-print("=" * 60)
-print("데이터 수집 및 저장 완료")
-print("=" * 60)
+st.success(f"🎉 데이터 수집 및 저장 완료! (총 {len(df)}건)")
 
-print(
-    f"저장 위치 : {save_path}"
-)
+# 요약 정보 표
+col1, col2 = st.columns(2)
+col1.metric("최종 행 수", f"{df.shape[0]} 행")
+col2.metric("최종 열 수", f"{df.shape[1]} 열")
 
-print(
-    f"최종 데이터 크기 : "
-    f"{df.shape[0]}행 × {df.shape[1]}열"
-)
+st.subheader("📊 최종 데이터 미리보기")
+st.dataframe(df.head(10), use_container_width=True)
+
+# 결측치 정보 보여주기
+with st.expander("🔍 컬럼별 결측치(Null) 개수 확인"):
+    st.dataframe(df.isna().sum().to_frame(name="결측치 수"))
