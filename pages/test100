@@ -1,1 +1,296 @@
+# ============================================================
+# 0. 라이브러리
+# ============================================================
 
+import requests
+import json
+import time
+import pandas as pd
+import numpy as np
+
+from sklearn.model_selection import train_test_split
+
+from sklearn.tree import DecisionTreeClassifier
+
+from sklearn.ensemble import (
+    RandomForestClassifier,
+    GradientBoostingClassifier
+)
+
+from sklearn.metrics import (
+    classification_report,
+    accuracy_score
+)
+
+import matplotlib.pyplot as plt
+
+!pip install koreanize-matplotlib -q
+import koreanize_matplotlib
+
+from google.colab import drive
+drive.mount('/content/drive')
+
+# ============================================================
+# 1. 기상청 ASOS API
+# ============================================================
+
+ASOS_SERVICE_KEY = "feb2bfabd299d5d05e89c7aec49ba7e706112603e76549a92e868bd86ec60323"
+
+ASOS_URL = (
+    "http://apis.data.go.kr/"
+    "1360000/AsosDalyInfoService/getWthrDataList"
+)
+
+# 영천 관측소
+STN_ID = "281"
+
+
+# ------------------------------------------------------------
+# 연도별 수집 함수
+# ------------------------------------------------------------
+def fetch_asos_year(year):
+
+    start_dt = f"{year}0101"
+    end_dt   = f"{year}1231"
+
+    params = {
+
+        "serviceKey": ASOS_SERVICE_KEY,
+
+        "numOfRows": "400",
+        "pageNo": "1",
+
+        "dataType": "JSON",
+
+        "dataCd": "ASOS",
+        "dateCd": "DAY",
+
+        "startDt": start_dt,
+        "endDt": end_dt,
+
+        "stnIds": STN_ID
+    }
+
+    try:
+
+        response = requests.get(
+            ASOS_URL,
+            params=params,
+            timeout=30
+        )
+
+        result = response.json()
+
+        items = result["response"]["body"]["items"]["item"]
+
+        df = pd.DataFrame(items)
+
+        print(f"{year}년 수집 완료 : {len(df)}건")
+
+        return df
+
+    except Exception as e:
+
+        print(f"{year}년 실패 :", e)
+
+        return pd.DataFrame()
+
+
+# ============================================================
+# 2. 전체 기상 데이터 수집
+# ============================================================
+
+print("=" * 60)
+print("기상 데이터 수집 시작")
+print("=" * 60)
+
+all_years = []
+
+for year in range(2016, 2026):
+
+    df_year = fetch_asos_year(year)
+
+    all_years.append(df_year)
+
+    # API 과부하 방지
+    time.sleep(0.5)
+
+weather_raw = pd.concat(
+    all_years,
+    ignore_index=True
+)
+
+print("\n전체 수집 :", len(weather_raw))
+
+
+# ============================================================
+# 3. 필요한 컬럼 추출
+# ============================================================
+
+weather = weather_raw[
+    [
+        "tm",
+
+        # 기온
+        "avgTa",
+        "maxTa",
+        "minTa",
+
+        # 습도
+        "avgRhm",
+
+        # 강수량
+        "sumRn",
+
+        # 풍속
+        "avgWs",
+
+        # 일사량
+        "sumSsHr",
+
+        # 지면온도
+        "avgTs"
+    ]
+].copy()
+
+
+# ============================================================
+# 4. 컬럼명 변경
+# ============================================================
+
+weather.columns = [
+
+    "date",
+
+    # 기온
+    "temp_avg",
+    "temp_max",
+    "temp_min",
+
+    # 습도
+    "humidity",
+
+    # 강수량
+    "rainfall",
+
+    # 풍속
+    "wind_speed",
+
+    # 일사량
+    "solar_radiation",
+
+    # 지면온도
+    "ground_temp"
+]
+
+# ============================================================
+# 5. 타입 변환
+# ============================================================
+
+weather["date"] = pd.to_datetime(
+    weather["date"],
+    errors="coerce"
+)
+
+numeric_cols = [
+
+    "temp_avg",
+    "temp_max",
+    "temp_min",
+
+    "humidity",
+
+    "rainfall",
+
+    "wind_speed",
+
+    "solar_radiation",
+
+    "ground_temp"
+]
+
+for col in numeric_cols:
+
+    weather[col] = pd.to_numeric(
+        weather[col],
+        errors="coerce"
+    )
+
+# ============================================================
+# 5-1. 강수량 결측값 처리
+# ============================================================
+
+weather["rainfall"] = weather["rainfall"].fillna(0)
+
+print("강수량 결측 처리 완료")
+print("강수량 결측 개수 :", weather["rainfall"].isna().sum())
+
+
+# ============================================================
+# 6. 정렬 및 결측 제거
+# ============================================================
+
+weather = (
+    weather
+    .dropna(subset=["date"])
+    .sort_values("date")
+    .reset_index(drop=True)
+)
+
+print("\n기상 데이터 정제 완료")
+print(weather.head())
+
+
+# ============================================================
+# 7. 미세먼지 데이터 불러오기
+# ============================================================
+
+air_url = (
+    "https://docs.google.com/spreadsheets/d/"
+    "1fBEnheVOP-23Hmv_5ZJZVy6m9VmNkpVd2XutOdmlYc8/"
+    "export?format=csv&gid=700055413"
+)
+
+air = pd.read_csv(air_url)
+
+air["date"] = pd.to_datetime(
+    air["date"],
+    errors="coerce"
+)
+
+print("\n미세먼지 데이터 :", len(air))
+print(air.head())
+
+# ============================================================
+# 8. 기상 + 미세먼지 병합
+# ============================================================
+
+df = pd.merge(
+    weather,
+    air,
+    on="date",
+    how="left"
+)
+
+print("\n병합 완료 :", len(df))
+
+print("\n결측치 확인")
+print(df.isna().sum())
+
+# ----------------------------------------------------------
+# CSV 저장
+# ----------------------------------------------------------
+save_path = (
+    "/content/drive/MyDrive/"
+    "00. 2026학년도 인재양성프로젝트/"
+    "공공데이터 기반 프로젝트/"
+    "dataset/[2016_2025] yeongcheon.csv"
+)
+
+df.to_csv(
+    save_path,
+    index=False,
+    encoding="utf-8-sig"
+)
+
+print("기상 및 미세먼지 데이터 저장 완료")
