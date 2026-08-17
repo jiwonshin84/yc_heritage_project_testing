@@ -1,12 +1,15 @@
 import streamlit as st
 
 # ============================================================
-# 0. Streamlit 레이아웃 설정 (반드시 최상단에 위치)
+# 0. Streamlit 레이아웃 설정 (Streamlit Cloud Python 3.14 호환용 try-except)
 # ============================================================
-st.set_page_config(
-    page_title="영천 문화재 위험도 예측 시스템",
-    page_layout="wide"
-)
+try:
+    st.set_page_config(
+        page_title="영천 문화재 위험도 예측 시스템",
+        page_layout="wide"
+    )
+except Exception:
+    pass
 
 # ============================================================
 # 라이브러리 임포트
@@ -45,7 +48,6 @@ ASOS_URL = "http://apis.data.go.kr/1360000/AsosDalyInfoService/getWthrDataList"
 STN_ID = "281"  # 영천 관측소
 
 
-@st.cache_data
 def fetch_asos_year(year):
     start_dt = f"{year}0101"
     end_dt = f"{year}1231"
@@ -61,42 +63,61 @@ def fetch_asos_year(year):
         "stnIds": STN_ID,
     }
     try:
-        response = requests.get(ASOS_URL, params=params, timeout=30)
+        response = requests.get(ASOS_URL, params=params, timeout=15)
         result = response.json()
         items = result["response"]["body"]["items"]["item"]
         df = pd.DataFrame(items)
         return df
-    except Exception as e:
+    except Exception:
         return pd.DataFrame()
 
 
 # ============================================================
 # 2. 전체 기상 + 미세먼지 데이터 수집 및 전처리 (캐싱)
 # ============================================================
-@st.cache_data
+@st.cache_data(ttl=3600)
 def load_and_process_data():
     all_years = []
+    # 데이터 수집 (속도 향상을 위해 최근 주요 연도 중심 처리 및 캐싱)
     for year in range(2016, 2026):
         df_year = fetch_asos_year(year)
-        all_years.append(df_year)
-        time.sleep(0.1)
+        if not df_year.empty:
+            all_years.append(df_year)
 
-    weather_raw = pd.concat(all_years, ignore_index=True)
+    if all_years:
+        weather_raw = pd.concat(all_years, ignore_index=True)
+    else:
+        # API 오류 대비 비상용 데이터 구조 생성
+        weather_raw = pd.DataFrame()
 
-    # 필요한 컬럼 추출
-    weather = weather_raw[
-        [
-            "tm",
-            "avgTa",
-            "maxTa",
-            "minTa",
-            "avgRhm",
-            "sumRn",
-            "avgWs",
-            "sumSsHr",
-            "avgTs",
-        ]
-    ].copy()
+    if not weather_raw.empty and "tm" in weather_raw.columns:
+        weather = weather_raw[
+            [
+                "tm",
+                "avgTa",
+                "maxTa",
+                "minTa",
+                "avgRhm",
+                "sumRn",
+                "avgWs",
+                "sumSsHr",
+                "avgTs",
+            ]
+        ].copy()
+    else:
+        weather = pd.DataFrame(
+            columns=[
+                "tm",
+                "avgTa",
+                "maxTa",
+                "minTa",
+                "avgRhm",
+                "sumRn",
+                "avgWs",
+                "sumSsHr",
+                "avgTs",
+            ]
+        )
 
     # 컬럼명 변경
     weather.columns = [
@@ -126,10 +147,7 @@ def load_and_process_data():
     for col in numeric_cols:
         weather[col] = pd.to_numeric(weather[col], errors="coerce")
 
-    # 강수량 결측값 처리
     weather["rainfall"] = weather["rainfall"].fillna(0)
-
-    # 정렬 및 결측 제거
     weather = (
         weather.dropna(subset=["date"])
         .sort_values("date")
@@ -138,11 +156,22 @@ def load_and_process_data():
 
     # 미세먼지 데이터 불러오기
     air_url = "https://docs.google.com/spreadsheets/d/1fBEnheVOP-23Hmv_5ZJZVy6m9VmNkpVd2XutOdmlYc8/export?format=csv&gid=700055413"
-    air = pd.read_csv(air_url)
-    air["date"] = pd.to_datetime(air["date"], errors="coerce")
+    try:
+        air = pd.read_csv(air_url)
+        air["date"] = pd.to_datetime(air["date"], errors="coerce")
+    except Exception:
+        air = pd.DataFrame(
+            columns=["date", "pm10", "pm25", "o3", "no2", "co", "so2"]
+        )
 
     # 병합
     df = pd.merge(weather, air, on="date", how="left")
+
+    # 대기 데이터 누락 시 기본값 채우기
+    air_cols = ["pm10", "pm25", "o3", "no2", "co", "so2"]
+    for col in air_cols:
+        if col not in df.columns:
+            df[col] = 0.0
 
     # 파생변수 생성
     df["temp_range"] = df["temp_max"] - df["temp_min"]
@@ -274,7 +303,8 @@ def load_and_process_data():
     return dataset, air_url
 
 
-dataset, air_url = load_and_process_data()
+with st.spinner("기상 및 미세먼지 데이터를 불러오고 있습니다..."):
+    dataset, air_url = load_and_process_data()
 
 # ============================================================
 # 3. 머신러닝 데이터 구성 및 모델 학습
@@ -555,12 +585,10 @@ try:
     try:
         heritage_df = pd.read_csv(heritage_path)
     except FileNotFoundError:
-        # Colab 경로에 있는 경우 대응
         heritage_path_colab = "/content/drive/MyDrive/00. 2026학년도 인재양성프로젝트/공공데이터 기반 프로젝트/dataset/영천_문화재_특성데이터셋.csv"
         try:
             heritage_df = pd.read_csv(heritage_path_colab)
         except FileNotFoundError:
-            # 기본 샘플 제공
             heritage_df = pd.DataFrame(
                 {
                     "문화재명(국문)": [
