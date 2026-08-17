@@ -12,29 +12,47 @@ except Exception:
     pass
 
 # ============================================================
-# 0. 라이브러리 임포트
+# 0. 라이브러리 임포트 및 한글 폰트 설정
 # ============================================================
 import itertools
 import json
+import os
+import platform
 import time
 from datetime import datetime, timedelta
 
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 import numpy as np
 import pandas as pd
 import requests
 
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
-# 한글 폰트 설정
-try:
-    import koreanize_matplotlib
-except ImportError:
-    pass
+# Matplotlib 한글 폰트 예외 처리 (크래시 방지)
+def set_korean_font():
+    system_name = platform.system()
+    if system_name == "Windows":
+        plt.rc('font', family='Malgun Gothic')
+    elif system_name == "Darwin":
+        plt.rc('font', family='AppleGothic')
+    else:
+        # Linux / Streamlit Cloud
+        font_path = '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'
+        if os.path.exists(font_path):
+            font_prop = fm.FontProperties(fname=font_path)
+            plt.rc('font', family=font_prop.get_name())
+        else:
+            # 나눔폰트가 없을 경우 맑은 고딕 계열 대체 시도
+            plt.rc('font', family='DejaVu Sans')
+            
+    plt.rc('axes', unicode_minus=False)
+
+set_korean_font()
 
 st.title("🏛️ 영천시 문화재 환경 위험도 실시간 예측 시스템")
 
@@ -49,8 +67,14 @@ STN_ID = "281"  # 영천 관측소
 
 
 def fetch_asos_year(year):
+    current_year = datetime.now().year
     start_dt = f"{year}0101"
-    end_dt = f"{year}1231"
+    
+    if year == current_year:
+        end_dt = (datetime.now() - timedelta(days=1)).strftime("%Y%m%d")
+    else:
+        end_dt = f"{year}1231"
+        
     params = {
         "serviceKey": ASOS_SERVICE_KEY,
         "numOfRows": "400",
@@ -63,7 +87,7 @@ def fetch_asos_year(year):
         "stnIds": STN_ID,
     }
     try:
-        response = requests.get(ASOS_URL, params=params, timeout=15)
+        response = requests.get(ASOS_URL, params=params, timeout=7)
         result = response.json()
         items = result["response"]["body"]["items"]["item"]
         df = pd.DataFrame(items)
@@ -75,13 +99,22 @@ def fetch_asos_year(year):
 # ============================================================
 # 2. 전체 기상 + 미세먼지 데이터 수집 및 전처리
 # ============================================================
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_and_process_data():
     all_years = []
-    for year in range(2016, 2026):
+    current_year = datetime.now().year
+    years = list(range(2016, current_year + 1))
+    
+    progress_text = "기상청 과거 데이터 불러오는 중..."
+    my_bar = st.progress(0, text=progress_text)
+
+    for idx, year in enumerate(years):
         df_year = fetch_asos_year(year)
         if not df_year.empty:
             all_years.append(df_year)
+        my_bar.progress(int((idx + 1) / len(years) * 100), text=f"기상 데이터 수집 중... ({year}년)")
+
+    my_bar.empty()
 
     if all_years:
         weather_raw = pd.concat(all_years, ignore_index=True)
@@ -294,7 +327,7 @@ def load_and_process_data():
 
     dataset["target"] = dataset["material_risk"].apply(label)
 
-    # [수정] 클래스가 1개 이하일 경우 에러 방지 처리
+    # 클래스가 1개 이하일 경우 에러 방지 처리
     unique_labels = dataset["target"].unique()
     if len(unique_labels) < 2:
         quantile_threshold = dataset["material_risk"].quantile(0.95)
@@ -303,8 +336,7 @@ def load_and_process_data():
     return dataset, air_url
 
 
-with st.spinner("기상 및 대기환경 데이터 로딩 중..."):
-    dataset, air_url = load_and_process_data()
+dataset, air_url = load_and_process_data()
 
 # ============================================================
 # 12. 머신러닝 데이터 구성
@@ -344,7 +376,7 @@ y = dataset["target"]
 X = pd.get_dummies(X, columns=["material", "exposure"])
 
 # ============================================================
-# 13. train/test split (수정: 안전 분할 처리)
+# 13. train/test split (안전 분할)
 # ============================================================
 class_counts = y.value_counts()
 min_class_count = class_counts.min()
@@ -438,7 +470,7 @@ st.subheader("🌲 전체 환경 요인 중요도 TOP 10")
 st.dataframe(importance_df, use_container_width=True)
 
 # ============================================================
-# 15. 재질별 환경요인 중요도 분석 (수정: try-except 추가)
+# 15. 재질별 환경요인 중요도 분석
 # ============================================================
 st.header("📊 재질별 환경 위험 요인 TOP 10")
 
@@ -547,7 +579,7 @@ params = {
 }
 
 try:
-    response = requests.get(ASOS_URL, params=params, timeout=10)
+    response = requests.get(ASOS_URL, params=params, timeout=7)
     items = response.json()["response"]["body"]["items"]["item"]
     weather_recent = pd.DataFrame(items)
 
@@ -587,7 +619,6 @@ try:
     recent_df = pd.merge(weather_recent, air_recent, on="date", how="left")
     recent_df = recent_df.sort_values("date").ffill().fillna(0)
 
-    # 최근 7일 데이터 기반 파생변수 생성
     latest = recent_df.iloc[-1]
 
     temp_range = latest["temp_max"] - latest["temp_min"]
@@ -607,7 +638,6 @@ try:
     oxidation_risk = latest["o3"] * 0.7 + latest["pm25"] * 0.3
     corrosion_risk = latest["humidity"] * 0.5 + latest["so2"] * 0.5
 
-    # 현재 수집된 기상·대기환경 요약 출력
     st.subheader("현재 수집된 기상·대기환경 요약")
     env_df = pd.DataFrame(
         [
@@ -681,39 +711,39 @@ try:
         results, columns=["문화재명", "재질", "노출형태", "예측위험등급"]
     )
 
-    # 위험도 등급 분포 차트
     st.subheader("영천 문화재 위험도 예측 결과 분포")
     counts = result_df["예측위험등급"].value_counts()
 
-    fig, ax = plt.subplots(figsize=(6, 4))
-    colors = {"안전": "green", "주의": "orange", "위험": "red"}
-    bar_colors = [colors.get(x, "blue") for x in counts.index]
-    counts.plot(kind="bar", color=bar_colors, edgecolor="black", ax=ax)
-    ax.set_title("영천 문화재 예측위험등급 분포")
-    ax.set_ylabel("개수")
-    plt.xticks(rotation=0)
-    plt.tight_layout()
-    st.pyplot(fig)
-    plt.close(fig)
+    # 차트 예외 처리 (서버 환경에 따라 폰트 오류가 생겨도 아래 리스트 출력이 멈추지 않도록 무사 통과)
+    try:
+        fig, ax = plt.subplots(figsize=(6, 4))
+        colors = {"안전": "green", "주의": "orange", "위험": "red"}
+        bar_colors = [colors.get(x, "blue") for x in counts.index]
+        counts.plot(kind="bar", color=bar_colors, edgecolor="black", ax=ax)
+        ax.set_title("영천 문화재 예측위험등급 분포")
+        ax.set_ylabel("개수")
+        plt.xticks(rotation=0)
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+    except Exception:
+        st.bar_chart(counts)
 
-    # 예측 위험 등급별 문화재 리스트 출력
+    # 예측 위험 등급별 문화재 리스트 출력 (위험 > 주의 > 안전 순)
+    st.markdown("---")
     for level in ["위험", "주의", "안전"]:
-        sub_df = result_df[result_df["예측위험등급"] == level]
+        sub_df = result_df[result_df["예측위험등급"] == level].copy()
 
         st.subheader(f"🚨 [예측위험등급: {level}] 문화재 리스트 (총 {len(sub_df)}건)")
 
         if len(sub_df) > 0:
-            formatted_df = (
-                sub_df.reset_index(drop=True)
-                .rename_axis("번호")
-                .reset_index()
-                .set_index("번호")
-                .assign(번호=lambda x: x.index + 1)
-                .set_index("번호")
-            )
-            st.dataframe(formatted_df, use_container_width=True)
+            # 순번(1번부터 시작) 깔끔하게 표로 정리
+            display_df = sub_df[["문화재명", "재질", "노출형태"]].reset_index(drop=True)
+            display_df.index = display_df.index + 1
+            display_df.index.name = "번호"
+            st.dataframe(display_df, use_container_width=True)
         else:
-            st.info(f"현재 환경 데이터 기준 '{level}' 등급으로 예측된 문화재가 없습니다.")
+            st.info(f"현재 기상/환경 데이터 기준 '{level}' 등급으로 예측된 문화재가 없습니다.")
 
 except Exception as e:
     st.error(f"실시간 데이터 예측 중 오류가 발생했습니다: {e}")
