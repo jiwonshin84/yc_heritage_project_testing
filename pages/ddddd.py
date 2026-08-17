@@ -293,6 +293,13 @@ def load_and_process_data():
             return "안전"
 
     dataset["target"] = dataset["material_risk"].apply(label)
+
+    # [수정] 클래스가 1개 이하일 경우 에러 방지 처리
+    unique_labels = dataset["target"].unique()
+    if len(unique_labels) < 2:
+        quantile_threshold = dataset["material_risk"].quantile(0.95)
+        dataset.loc[dataset["material_risk"] >= quantile_threshold, "target"] = "주의"
+
     return dataset, air_url
 
 
@@ -337,11 +344,19 @@ y = dataset["target"]
 X = pd.get_dummies(X, columns=["material", "exposure"])
 
 # ============================================================
-# 13. train/test split
+# 13. train/test split (수정: 안전 분할 처리)
 # ============================================================
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
+class_counts = y.value_counts()
+min_class_count = class_counts.min()
+
+if len(class_counts) >= 2 and min_class_count >= 2:
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+else:
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
 
 # ============================================================
 # 14. 모델 학습 (3개 모델 비교)
@@ -423,7 +438,7 @@ st.subheader("🌲 전체 환경 요인 중요도 TOP 10")
 st.dataframe(importance_df, use_container_width=True)
 
 # ============================================================
-# 15. 재질별 환경요인 중요도 분석
+# 15. 재질별 환경요인 중요도 분석 (수정: try-except 추가)
 # ============================================================
 st.header("📊 재질별 환경 위험 요인 TOP 10")
 
@@ -464,26 +479,30 @@ for idx, material in enumerate(materials_list):
         X_sub = sub_df[env_features]
         y_sub = sub_df["target"]
 
-        rf_sub = RandomForestClassifier(n_estimators=300, random_state=42)
-        rf_sub.fit(X_sub, y_sub)
+        if len(y_sub.unique()) > 1:
+            try:
+                rf_sub = RandomForestClassifier(n_estimators=300, random_state=42)
+                rf_sub.fit(X_sub, y_sub)
 
-        imp_df = (
-            pd.DataFrame(
-                {"Feature": env_features, "Importance": rf_sub.feature_importances_}
-            )
-            .sort_values("Importance", ascending=False)
-            .head(10)
-        )
+                imp_df = (
+                    pd.DataFrame(
+                        {"Feature": env_features, "Importance": rf_sub.feature_importances_}
+                    )
+                    .sort_values("Importance", ascending=False)
+                    .head(10)
+                )
 
-        fig, ax = plt.subplots(figsize=(6, 3.5))
-        ax.barh(imp_df["Feature"][::-1], imp_df["Importance"][::-1])
-        ax.set_title(f"{material} 문화재 위험요인 TOP 10")
-        ax.set_xlabel("Importance")
-        plt.tight_layout()
+                fig, ax = plt.subplots(figsize=(6, 3.5))
+                ax.barh(imp_df["Feature"][::-1], imp_df["Importance"][::-1])
+                ax.set_title(f"{material} 문화재 위험요인 TOP 10")
+                ax.set_xlabel("Importance")
+                plt.tight_layout()
 
-        with cols[idx % 2]:
-            st.pyplot(fig)
-            plt.close(fig)
+                with cols[idx % 2]:
+                    st.pyplot(fig)
+                    plt.close(fig)
+            except Exception:
+                pass
 
 # ============================================================
 # 16. 영천 문화재 위험등급 예측
