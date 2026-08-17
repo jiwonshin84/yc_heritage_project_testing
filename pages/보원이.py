@@ -3,159 +3,149 @@ import pandas as pd
 import numpy as np
 import itertools
 
-# 페이지 기본 설정
-st.set_page_config(page_title="영천 기상 데이터 전처리", layout="wide")
+# 1. 페이지 레이아웃 및 테마 설정
+st.set_page_config(
+    page_title="영천 기상 데이터 전처리 마스터", 
+    page_icon="🌤️",
+    layout="wide"
+)
+
+# 기본 타이틀 및 디자인
+st.title("🌤️ 대기/환경 데이터 통합 전처리 파이프라인")
+st.markdown("---")
+
+# 사이드바에 가이드라인 배치하여 메인 화면을 깔끔하게 유지
+with st.sidebar:
+    st.header("⚙️ 데이터 가이드")
+    st.info("영천 기상 데이터(`.csv`)를 업로드하면 자동으로 파생변수 생성, 재질/노출 조합 확장, 0~100 정규화까지 한 번에 수행됩니다.")
+    st.markdown("""
+    **자동 인식 컬럼:**
+    * `avg_temperature_c` ➡️ 기온
+    * `daily_precipitation_mm` ➡️ 강수량
+    * `avg_wind_speed_ms` ➡️ 풍속
+    * `avg_relative_humidity_pct` ➡️ 습도
+    """)
 
 # ============================================================
-# 1. 파생변수 생성 함수 (업로드된 파일 맞춤형 수정)
+# 코어 연산 함수 (하나로 합쳐서 한 번에 처리)
 # ============================================================
-@st.cache_data(show_spinner="1단계: 파생변수를 계산하고 있습니다...")
-def create_derived_features(dataframe):
+@st.cache_data(show_spinner="데이터 변환 3단계 파이프라인을 가동 중입니다...")
+def run_total_preprocessing(dataframe):
     df = dataframe.copy()
     
-    # 영천 기상 데이터의 실제 컬럼명 맵핑 (코드가 인식하기 쉽게 영문 별칭으로 변경)
+    # [단계 1] 컬럼명 변환 및 숫자형 변환
     rename_dict = {
         "avg_temperature_c": "temp_avg",
         "daily_precipitation_mm": "rainfall",
         "avg_wind_speed_ms": "wind_speed",
         "avg_relative_humidity_pct": "humidity"
     }
-    
-    # 컬럼명이 존재하는지 확인 후 변경
     df = df.rename(columns=rename_dict)
     
-    # 데이터 타입 숫자형 강제 변환 및 결측치(NaN)를 0으로 처리
     calc_cols = ["temp_avg", "rainfall", "wind_speed", "humidity"]
     for col in calc_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
         else:
-            st.error(f"⚠️ **오류:** 필수 컬럼이 없습니다. 현재 컬럼: {df.columns.tolist()}")
-            return None
+            return None, None, None
 
-    try:
-        # 7. 현재 데이터로 계산 가능한 파생변수만 생성
-        # (주의: 원본에 temp_max, temp_min이 없으므로 temp_range 대신 temp_avg를 활용하거나 기본값 처리)
-        df["temp_range"] = df["temp_avg"] * 0.2  # 일교차 대용 임시 산식 (또는 0 처리)
-        df["humidity_std3"] = df["humidity"].rolling(3, min_periods=1).std()
-        df["rainfall_7d"] = df["rainfall"].rolling(7, min_periods=1).sum()
-        df["high_humidity_risk"] = (df["humidity"] >= 75).rolling(3, min_periods=1).sum()
-        
-        # 풍화 위험도 (존재하는 기상 변수로만 재구성)
-        df["weathering_risk"] = (
-            df["temp_range"] * 0.4 +
-            df["humidity_std3"] * 0.3 +
-            df["wind_speed"] * 0.3
-        )
-        
-        # 데이터가 없는 리스크들은 0으로 기본값 처리하여 에러 방지
-        df["mold_risk"] = ((df["humidity"] >= 75) & (df["temp_avg"] >= 15)).astype(int)
-        df["pm_load"] = 0
-        df["acid_risk"] = 0
-        df["oxidation_risk"] = 0
-        df["corrosion_risk"] = df["humidity"] * 0.5
-
-        # 최종 결측치 처리
-        df = df.fillna(0)
-        return df
-    except Exception as e:
-        st.error(f"⚠️ **연산 오류(파생변수):** {e}")
-        return None
-
-# ============================================================
-# 2. 재질 × 노출 조합 & 3. 정규화 통합 연산 함수
-# ============================================================
-@st.cache_data(show_spinner="2~3단계: 조합 생성 및 0~100 정규화를 진행 중입니다...")
-def generate_combinations_and_normalize(dataframe):
-    df = dataframe.copy()
+    # [단계 2] 7. 파생변수 생성
+    df["temp_range"] = df["temp_avg"] * 0.2  
+    df["humidity_std3"] = df["humidity"].rolling(3, min_periods=1).std()
+    df["rainfall_7d"] = df["rainfall"].rolling(7, min_periods=1).sum()
+    df["high_humidity_risk"] = (df["humidity"] >= 75).rolling(3, min_periods=1).sum()
     
-    # [8. 재질 x 노출 조합 생성]
+    df["weathering_risk"] = (df["temp_range"] * 0.4 + df["humidity_std3"] * 0.3 + df["wind_speed"] * 0.3)
+    df["mold_risk"] = ((df["humidity"] >= 75) & (df["temp_avg"] >= 15)).astype(int)
+    df["pm_load"] = 0
+    df["acid_risk"] = 0
+    df["oxidation_risk"] = 0
+    df["corrosion_risk"] = df["humidity"] * 0.5
+    df = df.fillna(0)
+    
+    derived_df = df.copy() # 파생변수까지만 완료된 데이터 보관
+
+    # [단계 3] 8. 재질 x 노출 조합 생성 (15배 확장)
     materials = ["석조", "목조", "금속", "회화", "기타"]
     exposures = ["실외", "반실외", "실내"]
     
-    try:
-        comb = pd.DataFrame(
-            list(itertools.product(materials, exposures)),
-            columns=["material", "exposure"]
-        )
-        df["key"] = 1
-        comb["key"] = 1
-        dataset = pd.merge(df, comb, on="key").drop("key", axis=1)
-        
-    except Exception as e:
-        st.error(f"⚠️ **조합 오류:** {e}")
-        return None
+    comb = pd.DataFrame(list(itertools.product(materials, exposures)), columns=["material", "exposure"])
+    df["key"] = 1
+    comb["key"] = 1
+    dataset = pd.merge(df, comb, on="key").drop("key", axis=1)
 
-    # [9. 정규화 연산]
+    # [단계 4] 9. 0~100 정규화 연산
     risk_cols = [
-        "weathering_risk", "acid_risk", "rainfall_7d",
-        "temp_range", "pm_load", "corrosion_risk",
-        "mold_risk", "humidity_std3", "oxidation_risk",
-        "high_humidity_risk"
+        "weathering_risk", "acid_risk", "rainfall_7d", "temp_range", 
+        "pm_load", "corrosion_risk", "mold_risk", "humidity_std3", 
+        "oxidation_risk", "high_humidity_risk"
     ]
     
-    try:
-        for col in risk_cols:
-            col_min = dataset[col].min()
-            col_max = dataset[col].max()
+    for col in risk_cols:
+        col_min = dataset[col].min()
+        col_max = dataset[col].max()
+        if col_max - col_min == 0:
+            dataset[col+"_norm"] = 0.0
+        else:
+            dataset[col+"_norm"] = ((dataset[col] - col_min) / (col_max - col_min + 1e-6)) * 100
             
-            if col_max - col_min == 0:
-                dataset[col+"_norm"] = 0.0
-            else:
-                dataset[col+"_norm"] = (
-                    (dataset[col] - col_min) /
-                    (col_max - col_min + 1e-6)
-                ) * 100
-                
-        return dataset
-    except Exception as e:
-        st.error(f"⚠️ **정규화 오류:** {e}")
-        return None
+    return dataframe, derived_df, dataset
 
 
 # ============================================================
-# 스트림릿 웹 화면 UI
+# 메인 UI 레이아웃
 # ============================================================
-st.title("📊 영천 대기/환경 데이터 맞춤형 전처리 프로그램")
-st.markdown("하나의 파일로 **파생변수 생성 ➡️ 재질·노출 조합 확장 ➡️ 0~100 정규화**까지 원스톱으로 처리합니다.")
-
-uploaded_file = st.file_uploader("CSV 파일을 업로드해주세요.", type=["csv"])
+uploaded_file = st.file_uploader("📂 전처리할 영천 기상 데이터 CSV 파일을 업로드하세요.", type=["csv"])
 
 if uploaded_file is not None:
-    raw_df = pd.read_csv(uploaded_file)
+    raw_data = pd.read_csv(uploaded_file)
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("📋 1. 원본 데이터")
-        st.caption(f"행: {raw_df.shape[0]:,}개 / 열: {raw_df.shape[1]:,}개")
-        st.dataframe(raw_df.head(5), use_container_width=True)
+    # 데이터 파이프라인 가동
+    raw_df, derived_df, final_df = run_total_preprocessing(raw_data)
     
-    # 1단계 파생변수 작동 (자동)
-    processed_df = create_derived_features(raw_df)
-    
-    if processed_df is not None:
-        with col2:
-            st.subheader("🚀 2. 파생변수 생성 완료 (미리보기)")
-            st.caption(f"행: {processed_df.shape[0]:,}개 / 열: {processed_df.shape[1]:,}개")
-            st.dataframe(processed_df.head(5), use_container_width=True)
+    if final_df is not None:
+        # 1. 상단에 성공 스태터스 및 메트릭 대시보드 배치
+        st.success("🎉 데이터 파이프라인이 성공적으로 가동되었습니다! 아래 탭에서 결과를 확인하세요.")
         
-        st.markdown("---")
-        st.subheader("🧱 3. 최종 데이터셋 변환 (조합 + 정규화 100)")
-        st.info("아래 버튼을 누르면 재질×노출 조건이 결합되고, 리스크 지표가 **0~100 사이로 정규화(`_norm`)**됩니다.")
-        
-        if st.button("🔥 최종 통합 데이터셋 생성하기"):
-            final_dataset = generate_combinations_and_normalize(processed_df)
+        m_col1, m_col2, m_col3 = st.columns(3)
+        with m_col1:
+            st.metric(label="원본 데이터 행 수", value=f"{raw_df.shape[0]:,} 개")
+        with m_col2:
+            st.metric(label="최종 데이터 행 수 (15배 확장)", value=f"{final_df.shape[0]:,} 개")
+        with m_col3:
+            st.metric(label="생성된 총 컬럼 수", value=f"{final_df.shape[1]} 개")
             
-            if final_dataset is not None:
-                st.success(f"✅ 전처리 완료! 최종 데이터가 총 {final_dataset.shape[0]:,}행으로 생성되었습니다.")
-                st.dataframe(final_dataset.head(10), use_container_width=True)
-                
-                final_csv = final_dataset.to_csv(index=False).encode('utf-8-sig')
-                st.download_button(
-                    label="📥 최종 전처리 완료 데이터(CSV) 다운로드",
-                    data=final_csv,
-                    file_name="final_processed_normalized_data.csv",
-                    mime="text/csv"
-                )
+        st.markdown("### 🗂️ 전처리 단계별 데이터 확인")
+        
+        # 2. 탭 인터페이스를 사용하여 깔끔하게 분리
+        tab1, tab2, tab3 = st.tabs(["📋 1. 원본 데이터", "🚀 2. 파생변수 생성 완료", "🧱 3. 최종 본 (조합+정규화 완료)"])
+        
+        with tab1:
+            st.caption("업로드된 원래 데이터의 형태입니다.")
+            st.dataframe(raw_df.head(10), use_container_width=True)
+            
+        with tab2:
+            st.caption("기존 컬럼들을 조합하여 10종의 환경 리스크 파생변수를 추가한 상태입니다.")
+            st.dataframe(derived_df.head(10), use_container_width=True)
+            
+        with tab3:
+            st.caption("재질 5종 × 노출 3종 격자가 융합되고, 모든 리스크 지표가 0~100 범위(`_norm`)로 정규화된 최종본입니다.")
+            
+            # 다운로드 영역을 눈에 띄게 이쁘게 배치
+            st.markdown("#### ⬇️ 최종 결과물 저장")
+            final_csv = final_df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label="📥 최종 전처리 완료 데이터(CSV) 다운로드",
+                data=final_csv,
+                file_name="final_processed_normalized_data.csv",
+                mime="text/csv"
+            )
+            st.markdown("---")
+            st.dataframe(final_df.head(15), use_container_width=True)
+            
+    else:
+        st.error("⚠️ 파일의 컬럼명이 올바르지 않습니다. 왼쪽 사이드바의 자동 인식 컬럼 가이드를 확인해 주세요.")
 else:
-    st.info("💡 시작하려면 영천 기상 데이터 CSV 파일을 업로드해 주세요.")
+    # 파일 미업로드 시 예쁜 대기 화면 블록
+    st.subheader("📥 파일을 기다리는 중입니다...")
+    st.help("영천 기상 데이터셋 파일을 드래그 앤 드롭 하거나 파일 찾아보기를 클릭해 주세요.")
