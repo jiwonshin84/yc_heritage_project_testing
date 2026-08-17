@@ -1,7 +1,7 @@
 import streamlit as st
 
 # ============================================================
-# 0. Streamlit 레이아웃 설정 (Streamlit Cloud 최상단 위치 필수)
+# 0. Streamlit 레이아웃 설정 (페이지 최상단 위치 필수)
 # ============================================================
 try:
     st.set_page_config(
@@ -15,6 +15,7 @@ import itertools
 import json
 import os
 import platform
+import subprocess
 import time
 from datetime import datetime, timedelta
 
@@ -31,7 +32,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 # ============================================================
-# Matplotlib 한글 폰트 설정 (Streamlit Cloud packages.txt 연동)
+# Matplotlib 한글 폰트 방어 로직 (깨짐 방지)
 # ============================================================
 def set_korean_font():
     system_name = platform.system()
@@ -40,13 +41,22 @@ def set_korean_font():
     elif system_name == "Darwin":
         plt.rc('font', family='AppleGothic')
     else:
-        # Linux / Streamlit Cloud 환경 (packages.txt로 fonts-nanum 설치 시)
+        # Linux / Streamlit Cloud 환경
         font_path = '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'
+        
+        if not os.path.exists(font_path):
+            try:
+                subprocess.run(["apt-get", "update"], check=False)
+                subprocess.run(["apt-get", "install", "-y", "fonts-nanum"], check=False)
+            except Exception:
+                pass
+                
         if os.path.exists(font_path):
             font_prop = fm.FontProperties(fname=font_path)
             plt.rc('font', family=font_prop.get_name())
+            fm.fontManager.addfont(font_path)
         else:
-            # 폰트가 설치되지 않은 임시 상황 대비
+            # 나눔폰트 미설치 시 기본 깨짐 방지 폰트 적용
             plt.rc('font', family='DejaVu Sans')
             
     plt.rc('axes', unicode_minus=False)
@@ -63,7 +73,6 @@ ASOS_SERVICE_KEY = (
 )
 ASOS_URL = "http://apis.data.go.kr/1360000/AsosDalyInfoService/getWthrDataList"
 STN_ID = "281"  # 영천 관측소
-
 
 def fetch_asos_year(year):
     current_year = datetime.now().year
@@ -94,9 +103,8 @@ def fetch_asos_year(year):
     except Exception:
         return pd.DataFrame()
 
-
 # ============================================================
-# 2. 전체 기상 + 미세먼지 데이터 수집 및 전처리
+# 2. 전체 기상 + 미세먼지 데이터 수집 및 파생변수 생성
 # ============================================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_and_process_data():
@@ -104,7 +112,7 @@ def load_and_process_data():
     current_year = datetime.now().year
     years = list(range(2016, current_year + 1))
     
-    progress_text = "기상청 과거 데이터 불러오는 중..."
+    progress_text = "기상청 과거 데이터 수집 중..."
     my_bar = st.progress(0, text=progress_text)
 
     for idx, year in enumerate(years):
@@ -122,15 +130,11 @@ def load_and_process_data():
 
     if not weather_raw.empty and "tm" in weather_raw.columns:
         weather = weather_raw[
-            [
-                "tm", "avgTa", "maxTa", "minTa", "avgRhm", "sumRn", "avgWs", "sumSsHr", "avgTs"
-            ]
+            ["tm", "avgTa", "maxTa", "minTa", "avgRhm", "sumRn", "avgWs", "sumSsHr", "avgTs"]
         ].copy()
     else:
         weather = pd.DataFrame(
-            columns=[
-                "tm", "avgTa", "maxTa", "minTa", "avgRhm", "sumRn", "avgWs", "sumSsHr", "avgTs"
-            ]
+            columns=["tm", "avgTa", "maxTa", "minTa", "avgRhm", "sumRn", "avgWs", "sumSsHr", "avgTs"]
         )
 
     weather.columns = [
@@ -161,7 +165,7 @@ def load_and_process_data():
         if col not in df.columns:
             df[col] = 0.0
 
-    # 파생변수 생성
+    # 환경 지표 파생변수 산출
     df["temp_range"] = df["temp_max"] - df["temp_min"]
     df["humidity_std3"] = df["humidity"].rolling(3, min_periods=1).std()
     df["rainfall_7d"] = df["rainfall"].rolling(7, min_periods=1).sum()
@@ -174,7 +178,7 @@ def load_and_process_data():
     df["corrosion_risk"] = df["humidity"] * 0.5 + df["so2"] * 0.5
     df = df.fillna(0)
 
-    # 재질 × 노출 조합
+    # 재질 및 노출 형태 조합
     materials = ["석조", "목조", "금속", "회화", "기타"]
     exposures = ["실외", "반실외", "실내"]
     comb = pd.DataFrame(list(itertools.product(materials, exposures)), columns=["material", "exposure"])
@@ -221,14 +225,14 @@ def load_and_process_data():
 
     dataset["material_risk"] = dataset.apply(calc_risk, axis=1)
 
-    # 분위수(Quantile) 기반 등급 부여 (위험/주의/안전이 균형 있게 분류되도록 개선)
-    q80 = dataset["material_risk"].quantile(0.80)
-    q50 = dataset["material_risk"].quantile(0.50)
+    # 분위수(Quantile) 기준 등급 라벨링 (안전/주의/위험 고른 분포 유도)
+    q75 = dataset["material_risk"].quantile(0.75)
+    q40 = dataset["material_risk"].quantile(0.40)
 
     def label(x):
-        if x >= q80:
+        if x >= q75:
             return "위험"
-        elif x >= q50:
+        elif x >= q40:
             return "주의"
         else:
             return "안전"
@@ -239,7 +243,7 @@ def load_and_process_data():
 dataset, air_url = load_and_process_data()
 
 # ============================================================
-# 머신러닝 모델 학습
+# 3. 머신러닝 데이터 학습
 # ============================================================
 X = dataset[
     [
@@ -248,6 +252,7 @@ X = dataset[
         "weathering_risk", "mold_risk", "pm_load", "acid_risk", "oxidation_risk", "corrosion_risk", "material", "exposure"
     ]
 ]
+
 y = dataset["target"]
 X = pd.get_dummies(X, columns=["material", "exposure"])
 
@@ -255,11 +260,82 @@ X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_
 
 rf_model = RandomForestClassifier(n_estimators=300, random_state=42, n_jobs=-1)
 rf_model.fit(X_train, y_train)
+y_pred = rf_model.predict(X_test)
+acc = accuracy_score(y_test, y_pred)
+
+st.sidebar.subheader("🤖 모델 성능")
+st.sidebar.text(f"RandomForest 정확도: {acc:.4f}")
 
 # ============================================================
-# 영천 실시간 문화재 위험등급 예측
+# 4. 전체 환경 요인 중요도 TOP 10 (복원)
 # ============================================================
-st.header("🔍 영천 문화재 실시간 위험등급 예측")
+feature_cols = [
+    c for c in X_train.columns if not c.startswith("material_") and not c.startswith("exposure_")
+]
+
+importance_df = pd.DataFrame({
+    "Feature": X_train.columns,
+    "Importance": rf_model.feature_importances_
+})
+
+importance_df = (
+    importance_df[importance_df["Feature"].isin(feature_cols)]
+    .sort_values("Importance", ascending=False)
+    .head(10)
+    .reset_index(drop=True)
+)
+
+st.subheader("🌲 전체 환경 요인 중요도 TOP 10")
+st.dataframe(importance_df, use_container_width=True)
+
+# ============================================================
+# 5. 재질별 환경 요인 중요도 차트 (복원)
+# ============================================================
+st.header("📊 재질별 주요 환경 위험요인 TOP 10")
+
+env_features = [
+    "temp_avg", "temp_max", "temp_min", "humidity", "rainfall", "wind_speed", "solar_radiation", "ground_temp",
+    "pm10", "pm25", "o3", "no2", "co", "so2", "temp_range", "humidity_std3", "rainfall_7d", "high_humidity_risk",
+    "weathering_risk", "mold_risk", "pm_load", "acid_risk", "oxidation_risk", "corrosion_risk"
+]
+
+materials_list = ["석조", "목조", "금속", "회화"]
+cols = st.columns(2)
+
+for idx, material in enumerate(materials_list):
+    sub_df = dataset[dataset["material"] == material]
+
+    if len(sub_df) >= 30:
+        X_sub = sub_df[env_features]
+        y_sub = sub_df["target"]
+
+        if len(y_sub.unique()) > 1:
+            try:
+                rf_sub = RandomForestClassifier(n_estimators=300, random_state=42)
+                rf_sub.fit(X_sub, y_sub)
+
+                imp_df = (
+                    pd.DataFrame({"Feature": env_features, "Importance": rf_sub.feature_importances_})
+                    .sort_values("Importance", ascending=False)
+                    .head(10)
+                )
+
+                fig, ax = plt.subplots(figsize=(6, 3.5))
+                ax.barh(imp_df["Feature"][::-1], imp_df["Importance"][::-1], color="#2b5c8f")
+                ax.set_title(f"[{material}] 문화재 위험요인 TOP 10", fontsize=11)
+                ax.set_xlabel("Importance")
+                plt.tight_layout()
+
+                with cols[idx % 2]:
+                    st.pyplot(fig)
+                    plt.close(fig)
+            except Exception:
+                pass
+
+# ============================================================
+# 6. 영천시 문화재 실시간 위험도 예측 및 전체 표 (복원)
+# ============================================================
+st.header("🔍 영천시 문화재 실시간 위험등급 예측")
 
 heritage_path = "영천_문화재_특성데이터셋.csv"
 try:
@@ -322,6 +398,17 @@ try:
     oxidation_risk = latest["o3"] * 0.7 + latest["pm25"] * 0.3
     corrosion_risk = latest["humidity"] * 0.5 + latest["so2"] * 0.5
 
+    st.subheader("📌 실시간 수집 기상/대기 요약")
+    env_df = pd.DataFrame([{
+        "기준일자": latest["date"].strftime("%Y-%m-%d"),
+        "평균기온(℃)": latest["temp_avg"],
+        "습도(%)": latest["humidity"],
+        "강수량(mm)": latest["rainfall"],
+        "미세먼지(PM10)": latest["pm10"],
+        "초미세먼지(PM2.5)": latest["pm25"]
+    }])
+    st.dataframe(env_df, use_container_width=True)
+
     results = []
     for _, heritage in heritage_df.iterrows():
         predict_df = pd.DataFrame([{
@@ -343,33 +430,31 @@ try:
 
     result_df = pd.DataFrame(results, columns=["문화재명", "재질", "노출형태", "예측위험등급"])
 
-    # 차트 그리기
-    st.subheader("📊 영천 문화재 위험도 예측 결과 분포")
+    # 1) 예측 분포 시각화 차트
+    st.subheader("📊 예측 위험등급 분포")
     counts = result_df["예측위험등급"].value_counts().reindex(["위험", "주의", "안전"], fill_value=0)
 
-    fig, ax = plt.subplots(figsize=(7, 4))
-    colors = {"위험": "#FF4B4B", "주의": "#FFA500", "안전": "#28A745"}
+    fig, ax = plt.subplots(figsize=(7, 3.5))
+    colors = {"위험": "#d9534f", "주의": "#f0ad4e", "안전": "#5cb85c"}
     bar_colors = [colors[x] for x in counts.index]
     
-    bars = ax.bar(counts.index, counts.values, color=bar_colors, edgecolor="black", width=0.5)
-    ax.set_title("영천시 문화재 예측 위험등급 분포", fontsize=14, fontweight='bold', pad=15)
-    ax.set_xlabel("위험 등급", fontsize=12, labelpad=10)
-    ax.set_ylabel("문화재 수 (개)", fontsize=12, labelpad=10)
+    bars = ax.bar(counts.index, counts.values, color=bar_colors, edgecolor="black", width=0.4)
+    ax.set_title("영천시 문화재 위험등급별 수량", fontsize=12, pad=10)
+    ax.set_ylabel("수량 (개)", fontsize=10)
     
-    # 막대 위에 숫자 표시
     for bar in bars:
         height = bar.get_height()
         ax.annotate(f'{height}',
                     xy=(bar.get_x() + bar.get_width() / 2, height),
                     xytext=(0, 3),  
                     textcoords="offset points",
-                    ha='center', va='bottom', fontsize=11, fontweight='bold')
+                    ha='center', va='bottom', fontsize=10)
 
     plt.tight_layout()
     st.pyplot(fig)
     plt.close(fig)
 
-    # 등급별 목록 출력
+    # 2) 위험/주의/안전 등급별 문화재 표 (번호 1번부터 출력)
     st.markdown("---")
     for level in ["위험", "주의", "안전"]:
         sub_df = result_df[result_df["예측위험등급"] == level].copy()
@@ -383,7 +468,7 @@ try:
             display_df.index.name = "번호"
             st.dataframe(display_df, use_container_width=True)
         else:
-            st.info(f"현재 기상 조건상 '{level}' 등급으로 분류된 문화재가 없습니다.")
+            st.info(f"현재 기상 조건상 '{level}' 등급에 해당되는 문화재가 없습니다.")
 
 except Exception as e:
-    st.error(f"예측 도중 오류 발생: {e}")
+    st.error(f"예측 도중 오류가 발생했습니다: {e}")
