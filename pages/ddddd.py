@@ -1,3 +1,16 @@
+import streamlit as st
+
+# ============================================================
+# 0. Streamlit 레이아웃 설정 (반드시 최상단에 위치)
+# ============================================================
+st.set_page_config(
+    page_title="영천 문화재 위험도 예측 시스템",
+    page_layout="wide"
+)
+
+# ============================================================
+# 라이브러리 임포트
+# ============================================================
 import itertools
 import json
 import time
@@ -8,7 +21,6 @@ import numpy as np
 import pandas as pd
 import requests
 
-import streamlit as st
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report
@@ -21,16 +33,10 @@ try:
 except ImportError:
     pass
 
-# ============================================================
-# Streamlit 기본 레이아웃 설정
-# ============================================================
-st.set_page_config(
-    page_title="영천 문화재 위험도 예측 시스템", page_layout="wide"
-)
 st.title("🏛️ 영천시 문화재 환경 위험도 실시간 예측 시스템")
 
 # ============================================================
-# 1. 기상청 ASOS API 설정
+# 1. 기상청 ASOS API
 # ============================================================
 ASOS_SERVICE_KEY = (
     "feb2bfabd299d5d05e89c7aec49ba7e706112603e76549a92e868bd86ec60323"
@@ -65,7 +71,7 @@ def fetch_asos_year(year):
 
 
 # ============================================================
-# 2. 데이터 수집 및 파생변수 생성 (캐싱 적용)
+# 2. 전체 기상 + 미세먼지 데이터 수집 및 전처리 (캐싱)
 # ============================================================
 @st.cache_data
 def load_and_process_data():
@@ -77,6 +83,7 @@ def load_and_process_data():
 
     weather_raw = pd.concat(all_years, ignore_index=True)
 
+    # 필요한 컬럼 추출
     weather = weather_raw[
         [
             "tm",
@@ -90,6 +97,8 @@ def load_and_process_data():
             "avgTs",
         ]
     ].copy()
+
+    # 컬럼명 변경
     weather.columns = [
         "date",
         "temp_avg",
@@ -102,6 +111,7 @@ def load_and_process_data():
         "ground_temp",
     ]
 
+    # 타입 변환
     weather["date"] = pd.to_datetime(weather["date"], errors="coerce")
     numeric_cols = [
         "temp_avg",
@@ -116,17 +126,22 @@ def load_and_process_data():
     for col in numeric_cols:
         weather[col] = pd.to_numeric(weather[col], errors="coerce")
 
+    # 강수량 결측값 처리
     weather["rainfall"] = weather["rainfall"].fillna(0)
+
+    # 정렬 및 결측 제거
     weather = (
         weather.dropna(subset=["date"])
         .sort_values("date")
         .reset_index(drop=True)
     )
 
+    # 미세먼지 데이터 불러오기
     air_url = "https://docs.google.com/spreadsheets/d/1fBEnheVOP-23Hmv_5ZJZVy6m9VmNkpVd2XutOdmlYc8/export?format=csv&gid=700055413"
     air = pd.read_csv(air_url)
     air["date"] = pd.to_datetime(air["date"], errors="coerce")
 
+    # 병합
     df = pd.merge(weather, air, on="date", how="left")
 
     # 파생변수 생성
@@ -150,7 +165,7 @@ def load_and_process_data():
     df["corrosion_risk"] = df["humidity"] * 0.5 + df["so2"] * 0.5
     df = df.fillna(0)
 
-    # 재질 x 노출 조합 생성
+    # 재질 × 노출 조합
     materials = ["석조", "목조", "금속", "회화", "기타"]
     exposures = ["실외", "반실외", "실내"]
     comb = pd.DataFrame(
@@ -162,7 +177,7 @@ def load_and_process_data():
     comb["key"] = 1
     dataset = pd.merge(df, comb, on="key").drop("key", axis=1)
 
-    # 정규화 (calc_risk용 _norm 컬럼 생성)
+    # 위험도 계산용 정규화 컬럼 생성
     risk_cols = [
         "weathering_risk",
         "acid_risk",
@@ -185,6 +200,7 @@ def load_and_process_data():
                 max_val - min_val
             )
 
+    # 위험도 계산 (calc_risk)
     def calc_risk(row):
         m = row["material"]
         e = row["exposure"]
@@ -245,6 +261,7 @@ def load_and_process_data():
 
     dataset["material_risk"] = dataset.apply(calc_risk, axis=1)
 
+    # 라벨 생성
     def label(x):
         if x >= 80:
             return "위험"
@@ -260,7 +277,7 @@ def load_and_process_data():
 dataset, air_url = load_and_process_data()
 
 # ============================================================
-# 3. 모델 학습 및 최적 모델 자동 선정
+# 3. 머신러닝 데이터 구성 및 모델 학습
 # ============================================================
 X = dataset[
     [
@@ -328,19 +345,54 @@ trained_models["LogisticRegression"] = (lr_model, scaler)
 y_pred_lr = lr_model.predict(X_test_scaled)
 accuracies["LogisticRegression"] = accuracy_score(y_test, y_pred_lr)
 
-# 최적 모델 선정 (오류 수정 핵심)
+# 최적 모델 자동 지정
 best_model_name = max(accuracies, key=accuracies.get)
 best_model = trained_models[best_model_name]
 
-st.sidebar.subheader("🤖 모델 성능 비교")
+st.sidebar.subheader("🤖 모델 정확도 평가")
 for m_name, acc in accuracies.items():
     st.sidebar.text(f"{m_name}: {acc:.4f}")
-st.sidebar.success(
-    f"최적 모델: {best_model_name} ({accuracies[best_model_name]:.4f})"
-)
+st.sidebar.success(f"최고 성능 모델: {best_model_name}")
 
 # ============================================================
-# 4. 재질별 환경 요인 중요도 시각화
+# 4. 전체 변수 중요도 분석 (재질·노출 제외)
+# ============================================================
+feature_cols = [
+    c
+    for c in X_train.columns
+    if not c.startswith("material_")
+    and not c.startswith("exposure_")
+    and c != "material"
+    and c != "exposure"
+]
+
+if best_model_name == "LogisticRegression":
+    lr_m, scaler_m = best_model
+    importance_df = pd.DataFrame(
+        {
+            "Feature": X_train.columns,
+            "Importance": np.mean(np.abs(lr_m.coef_), axis=0),
+        }
+    )
+else:
+    importance_df = pd.DataFrame(
+        {
+            "Feature": X_train.columns,
+            "Importance": best_model.feature_importances_,
+        }
+    )
+
+importance_df = (
+    importance_df[importance_df["Feature"].isin(feature_cols)]
+    .sort_values("Importance", ascending=False)
+    .head(10)
+)
+
+st.subheader("🌲 전체 주요 환경 요인 TOP 10")
+st.dataframe(importance_df, use_container_width=True)
+
+# ============================================================
+# 5. 재질별 환경요인 중요도 분석
 # ============================================================
 st.header("📊 재질별 환경 위험 요인 TOP 10")
 
@@ -401,11 +453,10 @@ for idx, material in enumerate(materials_list):
             plt.close(fig)
 
 # ============================================================
-# 5. 최근 기상·대기 기반 실시간 영천 문화재 위험도 예측
+# 6. 실시간 영천 문화재 위험등급 예측
 # ============================================================
 st.header("🔍 영천 문화재 실시간 위험등급 예측")
 
-# 최근 기상 데이터 불러오기
 end_date = datetime.now() - timedelta(days=1)
 start_date = end_date - timedelta(days=6)
 start_dt = start_date.strftime("%Y%m%d")
@@ -452,6 +503,7 @@ try:
         "solar_radiation",
         "ground_temp",
     ]
+
     weather_recent["date"] = pd.to_datetime(weather_recent["date"])
     for c in weather_recent.columns[1:]:
         weather_recent[c] = pd.to_numeric(weather_recent[c], errors="coerce")
@@ -463,9 +515,9 @@ try:
     recent_df = pd.merge(weather_recent, air_recent, on="date", how="left")
     recent_df = recent_df.sort_values("date").ffill().fillna(0)
 
+    # 최근 시점 기준 데이터 계산
     latest = recent_df.iloc[-1]
 
-    # 파생변수 계산
     temp_range = latest["temp_max"] - latest["temp_min"]
     humidity_std3 = recent_df["humidity"].tail(3).std()
     if pd.isna(humidity_std3):
@@ -483,35 +535,43 @@ try:
     oxidation_risk = latest["o3"] * 0.7 + latest["pm25"] * 0.3
     corrosion_risk = latest["humidity"] * 0.5 + latest["so2"] * 0.5
 
-    # 수집된 기상 요약 표기
+    # 수집된 기상 요약 출력
+    st.subheader("현재 수집된 기상·대기환경 요약")
     env_summary = pd.DataFrame(
         [
             {
-                "날짜": latest["date"].strftime("%Y-%m-%d"),
-                "평균기온(℃)": latest["temp_avg"],
-                "습도(%)": latest["humidity"],
-                "미세먼지(PM10)": latest["pm10"],
-                "초미세먼지(PM2.5)": latest["pm25"],
+                "date": latest["date"].strftime("%Y-%m-%d"),
+                "temp_avg": latest["temp_avg"],
+                "humidity": latest["humidity"],
+                "pm10": latest["pm10"],
             }
         ]
     )
-    st.subheader("📌 최근 수집된 환경 정보")
     st.dataframe(env_summary, use_container_width=True)
 
-    # 문화재 목록 불러오기 및 예측
-    heritage_path = "/content/drive/MyDrive/00. 2026학년도 인재양성프로젝트/공공데이터 기반 프로젝트/dataset/영천_문화재_특성데이터셋.csv"
+    # 문화재 특성 데이터셋 로드
+    heritage_path = "영천_문화재_특성데이터셋.csv"
 
     try:
         heritage_df = pd.read_csv(heritage_path)
     except FileNotFoundError:
-        # 파일이 없을 때 대비 샘플 생성
-        heritage_df = pd.DataFrame(
-            {
-                "문화재명(국문)": ["영천 은해사 거조암 영산전", "영천 청제비"],
-                "재질": ["목조", "석조"],
-                "노출형태": ["반실외", "실외"],
-            }
-        )
+        # Colab 경로에 있는 경우 대응
+        heritage_path_colab = "/content/drive/MyDrive/00. 2026학년도 인재양성프로젝트/공공데이터 기반 프로젝트/dataset/영천_문화재_특성데이터셋.csv"
+        try:
+            heritage_df = pd.read_csv(heritage_path_colab)
+        except FileNotFoundError:
+            # 기본 샘플 제공
+            heritage_df = pd.DataFrame(
+                {
+                    "문화재명(국문)": [
+                        "영천 은해사 거조암 영산전",
+                        "영천 청제비",
+                        "영천 신월리 삼층석탑",
+                    ],
+                    "재질": ["목조", "석조", "석조"],
+                    "노출형태": ["반실외", "실외", "실외"],
+                }
+            )
 
     results = []
     for _, heritage in heritage_df.iterrows():
@@ -573,35 +633,39 @@ try:
         results, columns=["문화재명", "재질", "노출형태", "예측위험등급"]
     )
 
-    # 차트 및 리스트 출력
-    res_col1, res_col2 = st.columns([1, 2])
+    # 등급 분포 차트 및 결과
+    st.subheader("영천 문화재 위험도 예측 결과 분포")
+    counts = result_df["예측위험등급"].value_counts()
 
-    with res_col1:
-        st.subheader("📈 위험등급 분포")
-        counts = result_df["예측위험등급"].value_counts()
-        fig, ax = plt.subplots(figsize=(4, 3))
-        colors = {"안전": "green", "주의": "orange", "위험": "red"}
-        bar_colors = [colors.get(x, "blue") for x in counts.index]
-        counts.plot(kind="bar", color=bar_colors, edgecolor="black", ax=ax)
-        ax.set_ylabel("개수")
-        plt.xticks(rotation=0)
-        plt.tight_layout()
-        st.pyplot(fig)
-        plt.close(fig)
+    fig, ax = plt.subplots(figsize=(6, 4))
+    colors = {"안전": "green", "주의": "orange", "위험": "red"}
+    bar_colors = [colors.get(x, "blue") for x in counts.index]
+    counts.plot(kind="bar", color=bar_colors, edgecolor="black", ax=ax)
+    ax.set_title("영천 문화재 예측위험등급 분포")
+    ax.set_ylabel("개수")
+    plt.xticks(rotation=0)
+    plt.tight_layout()
+    st.pyplot(fig)
+    plt.close(fig)
 
-    with res_col2:
-        st.subheader("📋 위험등급별 리스트")
-        tab1, tab2, tab3 = st.tabs(["🚨 위험", "⚠️ 주의", "✅ 안전"])
+    # 예측 위험 등급별 리스트 출력
+    for level in ["위험", "주의", "안전"]:
+        sub_df = result_df[result_df["예측위험등급"] == level]
 
-        for tab, level in zip([tab1, tab2, tab3], ["위험", "주의", "안전"]):
-            with tab:
-                sub_df = result_df[result_df["예측위험등급"] == level]
-                if len(sub_df) > 0:
-                    st.dataframe(
-                        sub_df.reset_index(drop=True), use_container_width=True
-                    )
-                else:
-                    st.info(f"현재 등급이 '{level}'인 문화재가 없습니다.")
+        st.subheader(f"🚨 [예측위험등급: {level}] 문화재 리스트 (총 {len(sub_df)}건)")
+
+        if len(sub_df) > 0:
+            formatted_df = (
+                sub_df.reset_index(drop=True)
+                .rename_axis("번호")
+                .reset_index()
+                .set_index("번호")
+                .assign(번호=lambda x: x.index + 1)
+                .set_index("번호")
+            )
+            st.dataframe(formatted_df, use_container_width=True)
+        else:
+            st.info(f"현재 환경 데이터 기준 '{level}' 등급으로 예측된 문화재가 없습니다.")
 
 except Exception as e:
-    st.error(f"최근 데이터 수집 중 오류가 발생했습니다: {e}")
+    st.error(f"실시간 데이터 수집 중 오류가 발생하였습니다: {e}")
