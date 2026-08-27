@@ -90,7 +90,6 @@ try:
     ASOS_SERVICE_KEY = st.secrets["ASOS_SERVICE_KEY"]
 except Exception:
     ASOS_SERVICE_KEY = "feb2bfabd299d5d05e89c7aec49ba7e706112603e76549a92e868bd86ec60323"
-
 ASOS_URL = (
     "http://apis.data.go.kr/1360000/"
     "AsosDalyInfoService/getWthrDataList"
