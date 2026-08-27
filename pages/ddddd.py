@@ -89,7 +89,7 @@ st.title("🏛️ 영천시 문화재 환경 위험도 실시간 예측 시스�
 try:
     ASOS_SERVICE_KEY = st.secrets["ASOS_SERVICE_KEY"]
 except Exception:
-    ASOS_SERVICE_KEY = "여기에_기존_기상청_API_키_입력"
+    ASOS_SERVICE_KEY = "feb2bfabd299d5d05e89c7aec49ba7e706112603e76549a92e868bd86ec60323"
 
 ASOS_URL = (
     "http://apis.data.go.kr/1360000/"
