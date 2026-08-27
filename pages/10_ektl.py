@@ -127,8 +127,7 @@ def load_and_process_data():
     if all_years:
         weather_raw = pd.concat(all_years, ignore_index=True)
     else:
-        # API 연결 실패 시 앱 전체 다운 방지를 위한 임시 데이터 생성
-        st.warning("⚠️ 기상청 API 데이터 연결 실패로 인해 임시 샘플 데이터로 시스템을 동작합니다.")
+        st.warning("⚠️ 기상청 API 과거 데이터 연결 실패로 인해 임시 학습 데이터로 실행합니다.")
         dates = pd.date_range(start="2023-01-01", end="2025-12-31", freq="D")
         weather_raw = pd.DataFrame({
             "tm": dates.strftime("%Y-%m-%d"),
@@ -254,7 +253,7 @@ def load_and_process_data():
 dataset, air_url = load_and_process_data()
 
 # ============================================================
-# 3. 머신러닝 데이터 학습 (데이터 부족 및 예외 처리 완벽 방어)
+# 3. 머신러닝 데이터 학습
 # ============================================================
 X = dataset[
     [
@@ -364,7 +363,7 @@ for idx, material in enumerate(materials_list):
                 pass
 
 # ============================================================
-# 6. 영천시 문화재 실시간 위험도 예측 및 출력
+# 6. 영천시 문화재 실시간 위험도 예측 (안전 예외 처리 적용)
 # ============================================================
 st.header("영천시 문화재 실시간 위험등급 예측")
 
@@ -399,104 +398,125 @@ params = {
     "stnIds": STN_ID,
 }
 
+# --- 실시간 API 호출 안전 처리 ---
 try:
     response = requests.get(ASOS_URL, params=params, timeout=7)
     items = response.json()["response"]["body"]["items"]["item"]
     weather_recent = pd.DataFrame(items)
+except Exception:
+    st.warning("⚠️ 실시간 기상 API 접속 시간이 초과되어 최근 표준 기상 데이터(임시)로 실시간 예측을 구동합니다.")
+    dates = pd.date_range(start=start_date, end=end_date, freq="D")
+    weather_recent = pd.DataFrame({
+        "tm": dates.strftime("%Y-%m-%d"),
+        "avgTa": [22.0] * len(dates),
+        "maxTa": [28.0] * len(dates),
+        "minTa": [17.0] * len(dates),
+        "avgRhm": [65.0] * len(dates),
+        "sumRn": [0.0] * len(dates),
+        "avgWs": [2.1] * len(dates),
+        "sumSsHr": [8.0] * len(dates),
+        "avgTs": [23.5] * len(dates)
+    })
 
-    weather_recent = weather_recent[["tm", "avgTa", "maxTa", "minTa", "avgRhm", "sumRn", "avgWs", "sumSsHr", "avgTs"]].copy()
-    weather_recent.columns = ["date", "temp_avg", "temp_max", "temp_min", "humidity", "rainfall", "wind_speed", "solar_radiation", "ground_temp"]
-    weather_recent["date"] = pd.to_datetime(weather_recent["date"])
-    for c in weather_recent.columns[1:]:
-        weather_recent[c] = pd.to_numeric(weather_recent[c], errors="coerce")
+weather_recent = weather_recent[["tm", "avgTa", "maxTa", "minTa", "avgRhm", "sumRn", "avgWs", "sumSsHr", "avgTs"]].copy()
+weather_recent.columns = ["date", "temp_avg", "temp_max", "temp_min", "humidity", "rainfall", "wind_speed", "solar_radiation", "ground_temp"]
+weather_recent["date"] = pd.to_datetime(weather_recent["date"])
+for c in weather_recent.columns[1:]:
+    weather_recent[c] = pd.to_numeric(weather_recent[c], errors="coerce")
 
+try:
     air_recent = pd.read_csv(air_url)
     air_recent["date"] = pd.to_datetime(air_recent["date"])
     air_recent = air_recent[air_recent["date"].between(start_date, end_date)]
+except Exception:
+    air_recent = pd.DataFrame(columns=["date", "pm10", "pm25", "o3", "no2", "co", "so2"])
 
-    recent_df = pd.merge(weather_recent, air_recent, on="date", how="left").sort_values("date").ffill().fillna(0)
-    latest = recent_df.iloc[-1]
+recent_df = pd.merge(weather_recent, air_recent, on="date", how="left").sort_values("date").ffill().fillna(0)
 
-    temp_range = latest["temp_max"] - latest["temp_min"]
-    humidity_std3 = recent_df["humidity"].tail(3).std()
-    if pd.isna(humidity_std3): humidity_std3 = 0
-    rainfall_7d = recent_df["rainfall"].sum()
-    high_humidity_risk = int(latest["humidity"] >= 75)
-    weathering_risk = temp_range * 0.4 + humidity_std3 * 0.3 + latest["wind_speed"] * 0.3
-    mold_risk = int((latest["humidity"] >= 75) and (latest["ground_temp"] >= 15))
-    pm_load = latest["pm10"] + latest["pm25"]
-    acid_risk = latest["so2"] * 0.6 + latest["no2"] * 0.4
-    oxidation_risk = latest["o3"] * 0.7 + latest["pm25"] * 0.3
-    corrosion_risk = latest["humidity"] * 0.5 + latest["so2"] * 0.5
+# 대기 정보 열이 빠져있는 경우 예외 채우기
+for col in ["pm10", "pm25", "o3", "no2", "co", "so2"]:
+    if col not in recent_df.columns:
+        recent_df[col] = 0.0
 
-    st.subheader("실시간 수집 기상/대기 요약")
-    env_df = pd.DataFrame([{
-        "기준일자": latest["date"].strftime("%Y-%m-%d"),
-        "평균기온(℃)": latest["temp_avg"],
-        "습도(%)": latest["humidity"],
-        "강수량(mm)": latest["rainfall"],
-        "미세먼지(PM10)": latest["pm10"],
-        "초미세먼지(PM2.5)": latest["pm25"]
+latest = recent_df.iloc[-1]
+
+temp_range = latest["temp_max"] - latest["temp_min"]
+humidity_std3 = recent_df["humidity"].tail(3).std()
+if pd.isna(humidity_std3): humidity_std3 = 0
+rainfall_7d = recent_df["rainfall"].sum()
+high_humidity_risk = int(latest["humidity"] >= 75)
+weathering_risk = temp_range * 0.4 + humidity_std3 * 0.3 + latest["wind_speed"] * 0.3
+mold_risk = int((latest["humidity"] >= 75) and (latest["ground_temp"] >= 15))
+pm_load = latest["pm10"] + latest["pm25"]
+acid_risk = latest["so2"] * 0.6 + latest["no2"] * 0.4
+oxidation_risk = latest["o3"] * 0.7 + latest["pm25"] * 0.3
+corrosion_risk = latest["humidity"] * 0.5 + latest["so2"] * 0.5
+
+st.subheader("실시간 수집 기상/대기 요약")
+env_df = pd.DataFrame([{
+    "기준일자": latest["date"].strftime("%Y-%m-%d"),
+    "평균기온(℃)": latest["temp_avg"],
+    "습도(%)": latest["humidity"],
+    "강수량(mm)": latest["rainfall"],
+    "미세먼지(PM10)": latest["pm10"],
+    "초미세먼지(PM2.5)": latest["pm25"]
+}])
+st.dataframe(env_df, use_container_width=True)
+
+results = []
+for _, heritage in heritage_df.iterrows():
+    predict_df = pd.DataFrame([{
+        "temp_avg": latest["temp_avg"], "temp_max": latest["temp_max"], "temp_min": latest["temp_min"],
+        "humidity": latest["humidity"], "rainfall": latest["rainfall"], "wind_speed": latest["wind_speed"],
+        "solar_radiation": latest["solar_radiation"], "ground_temp": latest["ground_temp"],
+        "pm10": latest["pm10"], "pm25": latest["pm25"], "o3": latest["o3"], "no2": latest["no2"],
+        "co": latest["co"], "so2": latest["so2"], "temp_range": temp_range, "humidity_std3": humidity_std3,
+        "rainfall_7d": rainfall_7d, "high_humidity_risk": high_humidity_risk, "weathering_risk": weathering_risk,
+        "mold_risk": mold_risk, "pm_load": pm_load, "acid_risk": acid_risk, "oxidation_risk": oxidation_risk,
+        "corrosion_risk": corrosion_risk, "material": heritage["재질"], "exposure": heritage["노출형태"]
     }])
-    st.dataframe(env_df, use_container_width=True)
 
-    results = []
-    for _, heritage in heritage_df.iterrows():
-        predict_df = pd.DataFrame([{
-            "temp_avg": latest["temp_avg"], "temp_max": latest["temp_max"], "temp_min": latest["temp_min"],
-            "humidity": latest["humidity"], "rainfall": latest["rainfall"], "wind_speed": latest["wind_speed"],
-            "solar_radiation": latest["solar_radiation"], "ground_temp": latest["ground_temp"],
-            "pm10": latest["pm10"], "pm25": latest["pm25"], "o3": latest["o3"], "no2": latest["no2"],
-            "co": latest["co"], "so2": latest["so2"], "temp_range": temp_range, "humidity_std3": humidity_std3,
-            "rainfall_7d": rainfall_7d, "high_humidity_risk": high_humidity_risk, "weathering_risk": weathering_risk,
-            "mold_risk": mold_risk, "pm_load": pm_load, "acid_risk": acid_risk, "oxidation_risk": oxidation_risk,
-            "corrosion_risk": corrosion_risk, "material": heritage["재질"], "exposure": heritage["노출형태"]
-        }])
+    predict_df = pd.get_dummies(predict_df, columns=["material", "exposure"])
+    predict_df = predict_df.reindex(columns=X_train.columns, fill_value=0)
 
-        predict_df = pd.get_dummies(predict_df, columns=["material", "exposure"])
-        predict_df = predict_df.reindex(columns=X_train.columns, fill_value=0)
+    prediction = rf_model.predict(predict_df)[0]
+    results.append([heritage["문화재명(국문)"], heritage["재질"], heritage["노출형태"], prediction])
 
-        prediction = rf_model.predict(predict_df)[0]
-        results.append([heritage["문화재명(국문)"], heritage["재질"], heritage["노출형태"], prediction])
+result_df = pd.DataFrame(results, columns=["문화재명", "재질", "노출형태", "예측위험등급"])
 
-    result_df = pd.DataFrame(results, columns=["문화재명", "재질", "노출형태", "예측위험등급"])
+st.subheader("예측 위험등급 분포")
+counts = result_df["예측위험등급"].value_counts().reindex(["위험", "주의", "안전"], fill_value=0)
 
-    st.subheader("예측 위험등급 분포")
-    counts = result_df["예측위험등급"].value_counts().reindex(["위험", "주의", "안전"], fill_value=0)
+fig, ax = plt.subplots(figsize=(7, 3.5))
+colors = {"위험": "#d9534f", "주의": "#f0ad4e", "안전": "#5cb85c"}
+bar_colors = [colors[x] for x in counts.index]
 
-    fig, ax = plt.subplots(figsize=(7, 3.5))
-    colors = {"위험": "#d9534f", "주의": "#f0ad4e", "안전": "#5cb85c"}
-    bar_colors = [colors[x] for x in counts.index]
+bars = ax.bar(counts.index, counts.values, color=bar_colors, edgecolor="black", width=0.4)
+ax.set_title("영천시 문화재 위험등급별 수량", fontsize=12, pad=10)
+ax.set_ylabel("수량 (개)", fontsize=10)
+
+for bar in bars:
+    height = bar.get_height()
+    ax.annotate(f'{height}',
+                xy=(bar.get_x() + bar.get_width() / 2, height),
+                xytext=(0, 3),  
+                textcoords="offset points",
+                ha='center', va='bottom', fontsize=10)
+
+plt.tight_layout()
+st.pyplot(fig)
+plt.close(fig)
+
+st.markdown("---")
+for level in ["위험", "주의", "안전"]:
+    sub_df = result_df[result_df["예측위험등급"] == level].copy()
     
-    bars = ax.bar(counts.index, counts.values, color=bar_colors, edgecolor="black", width=0.4)
-    ax.set_title("영천시 문화재 위험등급별 수량", fontsize=12, pad=10)
-    ax.set_ylabel("수량 (개)", fontsize=10)
-    
-    for bar in bars:
-        height = bar.get_height()
-        ax.annotate(f'{height}',
-                    xy=(bar.get_x() + bar.get_width() / 2, height),
-                    xytext=(0, 3),  
-                    textcoords="offset points",
-                    ha='center', va='bottom', fontsize=10)
+    st.subheader(f"[{level} 등급] 문화재 목록 (총 {len(sub_df)}건)")
 
-    plt.tight_layout()
-    st.pyplot(fig)
-    plt.close(fig)
-
-    st.markdown("---")
-    for level in ["위험", "주의", "안전"]:
-        sub_df = result_df[result_df["예측위험등급"] == level].copy()
-        
-        st.subheader(f"[{level} 등급] 문화재 목록 (총 {len(sub_df)}건)")
-
-        if len(sub_df) > 0:
-            display_df = sub_df[["문화재명", "재질", "노출형태"]].reset_index(drop=True)
-            display_df.index = display_df.index + 1
-            display_df.index.name = "번호"
-            st.dataframe(display_df, use_container_width=True)
-        else:
-            st.info(f"현재 기상 조건상 '{level}' 등급에 해당되는 문화재가 없습니다.")
-
-except Exception as e:
-    st.error(f"실시간 기상 수집 또는 예측 과정에 문제가 발생했습니다: {e}")
+    if len(sub_df) > 0:
+        display_df = sub_df[["문화재명", "재질", "노출형태"]].reset_index(drop=True)
+        display_df.index = display_df.index + 1
+        display_df.index.name = "번호"
+        st.dataframe(display_df, use_container_width=True)
+    else:
+        st.info(f"현재 기상 조건상 '{level}' 등급에 해당되는 문화재가 없습니다.")
