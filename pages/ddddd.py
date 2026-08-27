@@ -135,7 +135,7 @@ if not ASOS_SERVICE_KEY:
     )
 
     st.code(
-        'SERVICE_KEY = "여기에_기상청_API_인증키"',
+        'SERVICE_KEY = "feb2bfabd299d5d05e89c7aec49ba7e706112603e76549a92e868bd86ec60323"',
         language="toml"
     )
 
