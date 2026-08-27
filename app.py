@@ -4,16 +4,21 @@
 import streamlit as st
 import pandas as pd
 import requests
+
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
 
 
 # ==========================================================
 # 페이지 설정
 # ==========================================================
 st.set_page_config(
-    page_title="공공 환경 데이터 기반 영천 지역 문화재 훼손 위험 예측",
-    page_icon="🏛",
+    page_title="영천 문화재 훼손 위험 예측",
+    page_icon="🏛️",
     layout="wide"
 )
 
@@ -21,11 +26,11 @@ st.set_page_config(
 # ==========================================================
 # API KEY
 # ==========================================================
-# Streamlit Cloud에서는
-# Settings → Secrets에 아래처럼 입력하세요.
+# Streamlit Cloud
 #
-# SERVICE_KEY = "새로운_API_키"
+# Settings → Secrets
 #
+# SERVICE_KEY = "새로운_API_KEY"
 # ==========================================================
 
 try:
@@ -35,21 +40,65 @@ except Exception:
 
 
 # ==========================================================
-# 1. 기상청 ASOS 전날 최신 기상자료
+# 데이터 파일
 # ==========================================================
+DATA_PATH = "data/processed/yc_heritage_detail_enriched.csv"
 
-ASOS_URL = (
-    "https://apis.data.go.kr/"
-    "1360000/AsosHourlyInfoService/getWthrDataList"
+
+# ==========================================================
+# 문화재 데이터 불러오기
+# ==========================================================
+try:
+
+    df = pd.read_csv(DATA_PATH)
+
+except FileNotFoundError:
+
+    st.error(
+        "❌ 문화재 데이터 파일을 찾을 수 없습니다.\n\n"
+        f"현재 경로: `{DATA_PATH}`"
+    )
+
+    st.stop()
+
+except Exception as e:
+
+    st.error(
+        f"❌ 문화재 데이터 불러오기 실패: {e}"
+    )
+
+    st.stop()
+
+
+# ==========================================================
+# 제목
+# ==========================================================
+st.markdown(
+    """
+    <h1 style="font-size:30px;">
+    🏛️ 공공 환경 데이터 기반 영천 지역 문화재 훼손 위험 예측
+    </h1>
+    """,
+    unsafe_allow_html=True
 )
 
-# 영천 관측소
-STN_ID = "281"
+st.markdown(
+    """
+    영천 지역 문화재 데이터와 기상·대기오염 공공데이터를 활용하여
+    문화재 훼손 위험을 분석하는 프로젝트입니다.
+    """
+)
 
-# 한국시간
-now = datetime.now(ZoneInfo("Asia/Seoul"))
+st.divider()
 
-# 전날
+
+# ==========================================================
+# 현재 한국시간
+# ==========================================================
+now = datetime.now(
+    ZoneInfo("Asia/Seoul")
+)
+
 yesterday = now - timedelta(days=1)
 
 base_date = yesterday.strftime("%Y%m%d")
@@ -60,6 +109,10 @@ base_hour = "23"
 # 기본값
 # ==========================================================
 
+# ------------------------------
+# 기상
+# ------------------------------
+
 tm = "-"
 temp = "-"
 humidity = "-"
@@ -67,29 +120,66 @@ rainfall = "-"
 wind_speed = "-"
 
 
+# ------------------------------
+# 대기오염
+# ------------------------------
+
+pm10 = "-"
+pm25 = "-"
+
+o3 = "-"
+no2 = "-"
+
+co = "-"
+so2 = "-"
+
+data_time = "-"
+
+
 # ==========================================================
-# ASOS API 요청
+# API 상태
 # ==========================================================
+
+weather_success = False
+air_success = False
+
+
+# ==========================================================
+# 1. 기상청 ASOS API
+# ==========================================================
+
+ASOS_URL = (
+    "https://apis.data.go.kr/"
+    "1360000/AsosHourlyInfoService/getWthrDataList"
+)
+
+STN_ID = "281"
+
 
 if SERVICE_KEY:
 
     asos_params = {
+
         "serviceKey": SERVICE_KEY,
+
         "pageNo": "1",
+
         "numOfRows": "1",
+
         "dataType": "JSON",
 
         "dataCd": "ASOS",
+
         "dateCd": "HR",
 
-        # 전날 23시
         "startDt": base_date,
+
         "startHh": base_hour,
 
         "endDt": base_date,
+
         "endHh": base_hour,
 
-        # 영천 관측소
         "stnIds": STN_ID
     }
 
@@ -105,7 +195,6 @@ if SERVICE_KEY:
 
         data = response.json()
 
-        # 데이터가 존재하는지 확인
         items = (
             data
             .get("response", {})
@@ -118,43 +207,39 @@ if SERVICE_KEY:
 
             item = items[0]
 
-            # 관측 시각
             tm = item.get("tm", "-")
 
-            # 기온
             temp = item.get("ta", "-")
 
-            # 습도
             humidity = item.get("hm", "-")
 
-            # 강수량
             rainfall = item.get("rn", "-")
 
-            # 풍속
             wind_speed = item.get("ws", "-")
+
+            weather_success = True
 
         else:
 
             st.warning(
-                "기상청 API에서 전날 23시 데이터를 찾지 못했습니다."
+                "⚠️ 기상청 API에서 데이터를 찾지 못했습니다."
             )
 
     except Exception as e:
 
         st.warning(
-            f"기상 데이터 조회에 실패했습니다: {e}"
+            f"⚠️ 기상 데이터 조회 실패: {e}"
         )
 
 else:
 
     st.warning(
-        "SERVICE_KEY가 설정되지 않았습니다. "
-        "Streamlit Secrets에 API 키를 등록해주세요."
+        "⚠️ SERVICE_KEY가 없습니다."
     )
 
 
 # ==========================================================
-# 2. 대기오염 최신 데이터
+# 2. 대기오염 API
 # ==========================================================
 
 AIR_URL = (
@@ -164,36 +249,18 @@ AIR_URL = (
 )
 
 
-# ==========================================================
-# 기본값
-# ==========================================================
-
-pm10 = "-"
-pm25 = "-"
-
-o3 = "-"
-no2 = "-"
-
-co = "-"
-so2 = "-"
-
-data_time = "-"
-
-
-# ==========================================================
-# 대기오염 API 요청
-# ==========================================================
-
 if SERVICE_KEY:
 
     air_params = {
+
         "serviceKey": SERVICE_KEY,
+
         "returnType": "json",
 
         "numOfRows": "100",
+
         "pageNo": "1",
 
-        # 경북
         "sidoName": "경북",
 
         "ver": "1.0"
@@ -218,117 +285,225 @@ if SERVICE_KEY:
             .get("items", [])
         )
 
-        # 영천 측정소 찾기
         target = None
 
         for item in items:
 
-            station_name = item.get("stationName", "")
+            station_name = item.get(
+                "stationName",
+                ""
+            )
 
             if "영천" in station_name:
 
                 target = item
+
                 break
 
         if target:
 
-            data_time = target.get("dataTime", "-")
+            data_time = target.get(
+                "dataTime",
+                "-"
+            )
 
-            pm10 = target.get("pm10Value", "-")
-            pm25 = target.get("pm25Value", "-")
+            pm10 = target.get(
+                "pm10Value",
+                "-"
+            )
 
-            o3 = target.get("o3Value", "-")
-            no2 = target.get("no2Value", "-")
+            pm25 = target.get(
+                "pm25Value",
+                "-"
+            )
 
-            co = target.get("coValue", "-")
-            so2 = target.get("so2Value", "-")
+            o3 = target.get(
+                "o3Value",
+                "-"
+            )
+
+            no2 = target.get(
+                "no2Value",
+                "-"
+            )
+
+            co = target.get(
+                "coValue",
+                "-"
+            )
+
+            so2 = target.get(
+                "so2Value",
+                "-"
+            )
+
+            air_success = True
 
         else:
 
             st.warning(
-                "대기오염 API에서 영천 측정소를 찾지 못했습니다."
+                "⚠️ 영천 대기오염 측정소 데이터를 찾지 못했습니다."
             )
 
     except Exception as e:
 
         st.warning(
-            f"대기오염 데이터 조회에 실패했습니다: {e}"
+            f"⚠️ 대기오염 데이터 조회 실패: {e}"
         )
 
 
 # ==========================================================
-# 3. 문화재 데이터 불러오기
+# 숫자 변환 함수
 # ==========================================================
 
-DATA_PATH = "data/processed/yc_heritage_detail_enriched.csv"
+def to_number(value):
+
+    try:
+
+        if value in ["-", "", None]:
+
+            return None
+
+        return float(value)
+
+    except:
+
+        return None
 
 
-try:
+# ==========================================================
+# API 데이터 숫자 변환
+# ==========================================================
 
-    df = pd.read_csv(DATA_PATH)
+temp_num = to_number(temp)
 
-except FileNotFoundError:
+humidity_num = to_number(humidity)
+
+rainfall_num = to_number(rainfall)
+
+wind_speed_num = to_number(wind_speed)
+
+pm10_num = to_number(pm10)
+
+pm25_num = to_number(pm25)
+
+o3_num = to_number(o3)
+
+no2_num = to_number(no2)
+
+co_num = to_number(co)
+
+so2_num = to_number(so2)
+
+
+# ==========================================================
+# 현재 환경 데이터
+# ==========================================================
+
+environment_data = pd.DataFrame({
+
+    "temp": [temp_num],
+
+    "humidity": [humidity_num],
+
+    "rainfall": [rainfall_num],
+
+    "wind_speed": [wind_speed_num],
+
+    "pm10": [pm10_num],
+
+    "pm25": [pm25_num],
+
+    "o3": [o3_num],
+
+    "no2": [no2_num],
+
+    "co": [co_num],
+
+    "so2": [so2_num]
+
+})
+
+
+# ==========================================================
+# API 데이터 상태 표시
+# ==========================================================
+
+st.subheader("🔌 공공데이터 API 연결 상태")
+
+status1, status2 = st.columns(2)
+
+
+with status1:
+
+    if weather_success:
+
+        st.success(
+            "✅ 기상청 API 정상 연결"
+        )
+
+    else:
+
+        st.error(
+            "❌ 기상청 API 데이터 없음"
+        )
+
+
+with status2:
+
+    if air_success:
+
+        st.success(
+            "✅ 대기오염 API 정상 연결"
+        )
+
+    else:
+
+        st.error(
+            "❌ 대기오염 API 데이터 없음"
+        )
+
+
+# ==========================================================
+# 환경 데이터가 없는 경우
+# ==========================================================
+
+if environment_data.dropna(
+    axis=1,
+    how="all"
+).empty:
 
     st.error(
-        f"문화재 데이터 파일을 찾을 수 없습니다.\n\n"
-        f"파일 경로: `{DATA_PATH}`"
+        "❌ 머신러닝에 사용할 환경 데이터가 없습니다. "
+        "기상청 API 키 또는 API 데이터 수집 상태를 확인해주세요."
     )
 
-    st.stop()
+else:
 
-except Exception as e:
-
-    st.error(
-        f"문화재 데이터 불러오기에 실패했습니다: {e}"
+    st.success(
+        "✅ 환경 데이터가 정상적으로 생성되었습니다."
     )
 
-    st.stop()
+
+# ==========================================================
+# 환경 데이터 확인
+# ==========================================================
+
+with st.expander(
+    "🔍 머신러닝 입력 데이터 확인"
+):
+
+    st.dataframe(
+        environment_data,
+        use_container_width=True
+    )
 
 
 # ==========================================================
-# 중요
+# 상단 대시보드
 # ==========================================================
-# 기존 코드에서
-#
-# X = dataset[...]
-#
-# 처럼 작성되어 있었다면 오류가 발생합니다.
-#
-# 현재 데이터프레임 이름은 df이므로
-#
-# X = df[...]
-#
-# 로 사용해야 합니다.
-#
-# ==========================================================
-
-
-# ==========================================================
-# 제목
-# ==========================================================
-
-st.markdown(
-    """
-    <h1 style='font-size:30px;'>
-    🏛 공공 환경 데이터 기반 영천 지역 문화재 훼손 위험 예측
-    </h1>
-    """,
-    unsafe_allow_html=True
-)
-
-st.markdown(
-    """
-    영천 지역 문화재와 공공 환경데이터를 분석하여
-    문화재 훼손 위험을 사전에 예측하는 데이터 분석 프로젝트입니다.
-    """
-)
 
 st.divider()
-
-
-# ==========================================================
-# 상단 환경 대시보드
-# ==========================================================
 
 st.markdown(
     """
@@ -344,15 +519,13 @@ st.markdown(
 
 
 # ==========================================================
-# 메인 영역
+# 카드
 # ==========================================================
 
-left, center, right = st.columns([1.4, 2.0, 1.0])
+left, center, right = st.columns(
+    [1.4, 2.0, 1.0]
+)
 
-
-# ==========================================================
-# 공통 스타일
-# ==========================================================
 
 card_style = """
 background-color:#f8f9fa;
@@ -393,7 +566,7 @@ bottom:20px;
 
 
 # ==========================================================
-# 1열 : 기상 환경
+# 기상 카드
 # ==========================================================
 
 with left:
@@ -425,7 +598,6 @@ with left:
                     </div>
                 </div>
 
-
                 <div>
                     <div style="{label_style}">
                         💧 습도
@@ -436,7 +608,6 @@ with left:
                     </div>
                 </div>
 
-
                 <div>
                     <div style="{label_style}">
                         🌧 강수량
@@ -446,7 +617,6 @@ with left:
                         {rainfall} mm
                     </div>
                 </div>
-
 
                 <div>
                     <div style="{label_style}">
@@ -471,7 +641,7 @@ with left:
 
 
 # ==========================================================
-# 2열 : 대기오염 현황
+# 대기오염 카드
 # ==========================================================
 
 with center:
@@ -503,7 +673,6 @@ with center:
                         {pm10}
                     </div>
 
-
                     <div style="{label_style}">
                         O₃
                     </div>
@@ -513,7 +682,6 @@ with center:
                     </div>
 
                 </div>
-
 
                 <div>
 
@@ -525,7 +693,6 @@ with center:
                         {pm25}
                     </div>
 
-
                     <div style="{label_style}">
                         NO₂
                     </div>
@@ -536,7 +703,6 @@ with center:
 
                 </div>
 
-
                 <div>
 
                     <div style="{label_style}">
@@ -546,7 +712,6 @@ with center:
                     <div style="{value_style}">
                         {co}
                     </div>
-
 
                     <div style="{label_style}">
                         SO₂
@@ -571,7 +736,7 @@ with center:
 
 
 # ==========================================================
-# 3열 : 문화재 현황
+# 문화재 카드
 # ==========================================================
 
 with right:
@@ -596,6 +761,14 @@ with right:
                     {len(df)}개
                 </div>
 
+                <div style="{label_style}">
+                    데이터 상태
+                </div>
+
+                <div style="{value_style}">
+                    정상
+                </div>
+
             </div>
 
         </div>
@@ -605,27 +778,370 @@ with right:
 
 
 # ==========================================================
-# 데이터 확인 영역
+# 머신러닝
 # ==========================================================
 
 st.divider()
 
-st.subheader("📊 문화재 데이터 확인")
+st.subheader("🤖 문화재 훼손 위험 머신러닝")
+
+
+# ==========================================================
+# 학습용 Target 컬럼 찾기
+# ==========================================================
+
+possible_targets = [
+
+    "risk",
+
+    "risk_level",
+
+    "damage_risk",
+
+    "damage",
+
+    "damage_level",
+
+    "위험도",
+
+    "훼손위험",
+
+    "훼손_위험",
+
+    "훼손위험도"
+
+]
+
+
+target_column = None
+
+
+for column in possible_targets:
+
+    if column in df.columns:
+
+        target_column = column
+
+        break
+
+
+# ==========================================================
+# Target이 없는 경우
+# ==========================================================
+
+if target_column is None:
+
+    st.info(
+        "ℹ️ 현재 문화재 CSV에서 머신러닝 정답값(Target)을 찾지 못했습니다."
+    )
+
+    st.write(
+        "현재 CSV 컬럼:"
+    )
+
+    st.code(
+        ", ".join(df.columns.tolist())
+    )
+
+    st.warning(
+        "실제 머신러닝을 학습하려면 "
+        "각 문화재의 훼손 여부 또는 위험도와 같은 Target 컬럼이 필요합니다."
+    )
+
+
+# ==========================================================
+# Target이 있는 경우
+# ==========================================================
+
+else:
+
+    st.success(
+        f"✅ 머신러닝 Target 컬럼 발견: `{target_column}`"
+    )
+
+
+    # ------------------------------------------------------
+    # 사용할 Feature
+    # ------------------------------------------------------
+
+    feature_columns = [
+
+        "temp",
+
+        "humidity",
+
+        "rainfall",
+
+        "wind_speed",
+
+        "pm10",
+
+        "pm25",
+
+        "o3",
+
+        "no2",
+
+        "co",
+
+        "so2"
+
+    ]
+
+
+    # ------------------------------------------------------
+    # 문화재 데이터에 환경 데이터가 있는지 확인
+    # ------------------------------------------------------
+
+    available_features = [
+
+        column
+
+        for column in feature_columns
+
+        if column in df.columns
+
+    ]
+
+
+    if len(available_features) == 0:
+
+        st.warning(
+            "문화재 CSV에 머신러닝 Feature가 없습니다."
+        )
+
+    else:
+
+        ml_df = df[
+            available_features + [target_column]
+        ].copy()
+
+
+        # 숫자형 변환
+
+        for column in available_features:
+
+            ml_df[column] = pd.to_numeric(
+                ml_df[column],
+                errors="coerce"
+            )
+
+
+        ml_df = ml_df.dropna()
+
+
+        # --------------------------------------------------
+        # 데이터 확인
+        # --------------------------------------------------
+
+        if len(ml_df) < 10:
+
+            st.warning(
+                "머신러닝을 학습하기 위한 데이터가 너무 적습니다."
+            )
+
+        else:
+
+            X = ml_df[
+                available_features
+            ]
+
+            y = ml_df[
+                target_column
+            ]
+
+
+            # ------------------------------------------------
+            # Target 클래스 확인
+            # ------------------------------------------------
+
+            if y.nunique() < 2:
+
+                st.warning(
+                    "Target 값이 한 종류뿐이라 "
+                    "분류 머신러닝을 학습할 수 없습니다."
+                )
+
+            else:
+
+                # --------------------------------------------
+                # 학습 / 테스트 분리
+                # --------------------------------------------
+
+                try:
+
+                    X_train, X_test, y_train, y_test = train_test_split(
+
+                        X,
+
+                        y,
+
+                        test_size=0.2,
+
+                        random_state=42,
+
+                        stratify=y
+
+                    )
+
+                except ValueError:
+
+                    X_train, X_test, y_train, y_test = train_test_split(
+
+                        X,
+
+                        y,
+
+                        test_size=0.2,
+
+                        random_state=42
+
+                    )
+
+
+                # --------------------------------------------
+                # Random Forest
+                # --------------------------------------------
+
+                model = RandomForestClassifier(
+
+                    n_estimators=100,
+
+                    random_state=42
+
+                )
+
+
+                model.fit(
+                    X_train,
+                    y_train
+                )
+
+
+                # --------------------------------------------
+                # 정확도
+                # --------------------------------------------
+
+                prediction = model.predict(
+                    X_test
+                )
+
+
+                accuracy = accuracy_score(
+                    y_test,
+                    prediction
+                )
+
+
+                st.metric(
+                    "머신러닝 정확도",
+                    f"{accuracy * 100:.1f}%"
+                )
+
+
+                # --------------------------------------------
+                # 현재 환경 위험 예측
+                # --------------------------------------------
+
+                current_ml = environment_data[
+                    available_features
+                ].copy()
+
+
+                # 결측치 처리
+
+                current_ml = current_ml.fillna(
+                    ml_df[available_features].median()
+                )
+
+
+                current_prediction = model.predict(
+                    current_ml
+                )[0]
+
+
+                st.subheader(
+                    "🔮 현재 환경 기반 예측"
+                )
+
+
+                st.success(
+                    f"예측 결과: **{current_prediction}**"
+                )
+
+
+                # --------------------------------------------
+                # Feature 중요도
+                # --------------------------------------------
+
+                importance_df = pd.DataFrame({
+
+                    "환경 요인":
+                        available_features,
+
+                    "중요도":
+                        model.feature_importances_
+
+                }).sort_values(
+
+                    "중요도",
+
+                    ascending=False
+
+                )
+
+
+                st.subheader(
+                    "📊 환경 요인 중요도"
+                )
+
+
+                st.bar_chart(
+                    importance_df.set_index(
+                        "환경 요인"
+                    )
+                )
+
+
+# ==========================================================
+# 데이터 미리보기
+# ==========================================================
+
+st.divider()
+
+st.subheader("📊 문화재 데이터")
 
 st.write(
-    f"총 **{len(df)}개**의 문화재 데이터를 불러왔습니다."
+    f"총 **{len(df)}개**의 문화재 데이터가 있습니다."
 )
 
-with st.expander("문화재 데이터 미리보기"):
+
+with st.expander(
+    "문화재 데이터 미리보기"
+):
 
     st.dataframe(
-        df.head(10),
+        df.head(20),
         use_container_width=True
     )
 
 
 # ==========================================================
-# 하단 안내
+# API 원본 환경 데이터
+# ==========================================================
+
+with st.expander(
+    "🌱 현재 수집된 환경 데이터"
+):
+
+    st.dataframe(
+        environment_data,
+        use_container_width=True
+    )
+
+
+# ==========================================================
+# 하단
 # ==========================================================
 
 st.divider()
