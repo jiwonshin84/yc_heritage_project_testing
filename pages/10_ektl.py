@@ -41,7 +41,6 @@ def set_korean_font():
     elif system_name == "Darwin":
         plt.rc('font', family='AppleGothic')
     else:
-        # Linux / Streamlit Cloud 환경
         font_path = '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'
         
         if not os.path.exists(font_path):
@@ -56,7 +55,6 @@ def set_korean_font():
             plt.rc('font', family=font_prop.get_name())
             fm.fontManager.addfont(font_path)
         else:
-            # 나눔폰트 미설치 시 기본 깨짐 방지 폰트 적용
             plt.rc('font', family='DejaVu Sans')
             
     plt.rc('axes', unicode_minus=False)
@@ -165,7 +163,6 @@ def load_and_process_data():
         if col not in df.columns:
             df[col] = 0.0
 
-    # 환경 지표 파생변수 산출
     df["temp_range"] = df["temp_max"] - df["temp_min"]
     df["humidity_std3"] = df["humidity"].rolling(3, min_periods=1).std()
     df["rainfall_7d"] = df["rainfall"].rolling(7, min_periods=1).sum()
@@ -178,7 +175,6 @@ def load_and_process_data():
     df["corrosion_risk"] = df["humidity"] * 0.5 + df["so2"] * 0.5
     df = df.fillna(0)
 
-    # 재질 및 노출 형태 조합
     materials = ["석조", "목조", "금속", "회화", "기타"]
     exposures = ["실외", "반실외", "실내"]
     comb = pd.DataFrame(list(itertools.product(materials, exposures)), columns=["material", "exposure"])
@@ -225,7 +221,6 @@ def load_and_process_data():
 
     dataset["material_risk"] = dataset.apply(calc_risk, axis=1)
 
-    # 분위수(Quantile) 기준 등급 라벨링 (안전/주의/위험 고른 분포 유도)
     q75 = dataset["material_risk"].quantile(0.75)
     q40 = dataset["material_risk"].quantile(0.40)
 
@@ -243,7 +238,7 @@ def load_and_process_data():
 dataset, air_url = load_and_process_data()
 
 # ============================================================
-# 3. 머신러닝 데이터 학습 (ValueError 방어 로직 적용)
+# 3. 머신러닝 데이터 학습 (완벽 방어 로직)
 # ============================================================
 X = dataset[
     [
@@ -256,25 +251,36 @@ X = dataset[
 y = dataset["target"]
 X = pd.get_dummies(X, columns=["material", "exposure"])
 
-# --- [수정 포인트: Stratify 에러 방지 안전 로직 추가] ---
-# 1) y 결측치 제거
+# --- [수정 포인트: 데이터 수 및 stratify 조건 완벽 예외 처리] ---
 mask_notna = y.notna()
 X_clean = X[mask_notna]
 y_clean = y[mask_notna]
 
-# 2) 데이터 샘플 수가 2개 이상인 클래스만 필터링 (Stratify 에러 완전 방지)
 class_counts = y_clean.value_counts()
+# 각 클래스별로 최소 2개 이상의 샘플이 있는지 체크
 valid_classes = class_counts[class_counts >= 2].index
 mask_valid = y_clean.isin(valid_classes)
 
+X_filtered = X_clean[mask_valid]
+y_filtered = y_clean[mask_valid]
+
+# 남은 데이터 수가 없거나 지나치게 적을 때의 예외 방어
+if len(y_filtered) < 5:
+    st.error("학습에 필요한 최소 데이터 수가 부족합니다. (기상/대기 API 수집 상태를 확인해주세요.)")
+    st.stop()
+
+# stratify 안전 적용 체크 (최소 클래스 샘플 수 검증)
+min_class_count = y_filtered.value_counts().min()
+use_stratify = y_filtered if min_class_count >= 2 else None
+
 X_train, X_test, y_train, y_test = train_test_split(
-    X_clean[mask_valid], 
-    y_clean[mask_valid], 
+    X_filtered, 
+    y_filtered, 
     test_size=0.2, 
     random_state=42, 
-    stratify=y_clean[mask_valid]
+    stratify=use_stratify
 )
-# -----------------------------------------------------
+# -----------------------------------------------------------------
 
 rf_model = RandomForestClassifier(n_estimators=300, random_state=42, n_jobs=-1)
 rf_model.fit(X_train, y_train)
@@ -448,7 +454,6 @@ try:
 
     result_df = pd.DataFrame(results, columns=["문화재명", "재질", "노출형태", "예측위험등급"])
 
-    # 1) 예측 분포 시각화 차트
     st.subheader("예측 위험등급 분포")
     counts = result_df["예측위험등급"].value_counts().reindex(["위험", "주의", "안전"], fill_value=0)
 
@@ -472,7 +477,6 @@ try:
     st.pyplot(fig)
     plt.close(fig)
 
-    # 2) 위험/주의/안전 등급별 문화재 표 (번호 1번부터 출력)
     st.markdown("---")
     for level in ["위험", "주의", "안전"]:
         sub_df = result_df[result_df["예측위험등급"] == level].copy()
