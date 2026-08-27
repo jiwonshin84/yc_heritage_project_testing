@@ -32,7 +32,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 # ============================================================
-# Matplotlib 한글 폰트 방어 로직 (깨짐 방지)
+# Matplotlib 한글 폰트 설정
 # ============================================================
 def set_korean_font():
     system_name = platform.system()
@@ -95,14 +95,17 @@ def fetch_asos_year(year):
     try:
         response = requests.get(ASOS_URL, params=params, timeout=7)
         result = response.json()
-        items = result["response"]["body"]["items"]["item"]
-        df = pd.DataFrame(items)
-        return df
+        
+        if "response" in result and "body" in result["response"] and "items" in result["response"]["body"]:
+            items = result["response"]["body"]["items"]["item"]
+            return pd.DataFrame(items)
+        else:
+            return pd.DataFrame()
     except Exception:
         return pd.DataFrame()
 
 # ============================================================
-# 2. 전체 기상 + 미세먼지 데이터 수집 및 파생변수 생성
+# 2. 데이터 수집, 가공 및 대체(Mock) 데이터 방어 로직
 # ============================================================
 @st.cache_data(ttl=3600, show_spinner=False)
 def load_and_process_data():
@@ -124,9 +127,22 @@ def load_and_process_data():
     if all_years:
         weather_raw = pd.concat(all_years, ignore_index=True)
     else:
-        weather_raw = pd.DataFrame()
+        # API 연결 실패 시 앱 전체 다운 방지를 위한 임시 데이터 생성
+        st.warning("⚠️ 기상청 API 데이터 연결 실패로 인해 임시 샘플 데이터로 시스템을 동작합니다.")
+        dates = pd.date_range(start="2023-01-01", end="2025-12-31", freq="D")
+        weather_raw = pd.DataFrame({
+            "tm": dates.strftime("%Y-%m-%d"),
+            "avgTa": np.random.uniform(10, 25, len(dates)),
+            "maxTa": np.random.uniform(20, 32, len(dates)),
+            "minTa": np.random.uniform(0, 15, len(dates)),
+            "avgRhm": np.random.uniform(40, 85, len(dates)),
+            "sumRn": np.random.choice([0, 0, 0, 5, 12, 30], len(dates)),
+            "avgWs": np.random.uniform(1, 5, len(dates)),
+            "sumSsHr": np.random.uniform(5, 12, len(dates)),
+            "avgTs": np.random.uniform(10, 28, len(dates)),
+        })
 
-    if not weather_raw.empty and "tm" in weather_raw.columns:
+    if "tm" in weather_raw.columns:
         weather = weather_raw[
             ["tm", "avgTa", "maxTa", "minTa", "avgRhm", "sumRn", "avgWs", "sumSsHr", "avgTs"]
         ].copy()
@@ -238,7 +254,7 @@ def load_and_process_data():
 dataset, air_url = load_and_process_data()
 
 # ============================================================
-# 3. 머신러닝 데이터 학습 (완벽 방어 로직)
+# 3. 머신러닝 데이터 학습 (데이터 부족 및 예외 처리 완벽 방어)
 # ============================================================
 X = dataset[
     [
@@ -251,26 +267,18 @@ X = dataset[
 y = dataset["target"]
 X = pd.get_dummies(X, columns=["material", "exposure"])
 
-# --- [수정 포인트: 데이터 수 및 stratify 조건 완벽 예외 처리] ---
 mask_notna = y.notna()
 X_clean = X[mask_notna]
 y_clean = y[mask_notna]
 
 class_counts = y_clean.value_counts()
-# 각 클래스별로 최소 2개 이상의 샘플이 있는지 체크
 valid_classes = class_counts[class_counts >= 2].index
 mask_valid = y_clean.isin(valid_classes)
 
 X_filtered = X_clean[mask_valid]
 y_filtered = y_clean[mask_valid]
 
-# 남은 데이터 수가 없거나 지나치게 적을 때의 예외 방어
-if len(y_filtered) < 5:
-    st.error("학습에 필요한 최소 데이터 수가 부족합니다. (기상/대기 API 수집 상태를 확인해주세요.)")
-    st.stop()
-
-# stratify 안전 적용 체크 (최소 클래스 샘플 수 검증)
-min_class_count = y_filtered.value_counts().min()
+min_class_count = y_filtered.value_counts().min() if not y_filtered.empty else 0
 use_stratify = y_filtered if min_class_count >= 2 else None
 
 X_train, X_test, y_train, y_test = train_test_split(
@@ -280,7 +288,6 @@ X_train, X_test, y_train, y_test = train_test_split(
     random_state=42, 
     stratify=use_stratify
 )
-# -----------------------------------------------------------------
 
 rf_model = RandomForestClassifier(n_estimators=300, random_state=42, n_jobs=-1)
 rf_model.fit(X_train, y_train)
@@ -357,7 +364,7 @@ for idx, material in enumerate(materials_list):
                 pass
 
 # ============================================================
-# 6. 영천시 문화재 실시간 위험도 예측 및 전체 표
+# 6. 영천시 문화재 실시간 위험도 예측 및 출력
 # ============================================================
 st.header("영천시 문화재 실시간 위험등급 예측")
 
@@ -481,8 +488,7 @@ try:
     for level in ["위험", "주의", "안전"]:
         sub_df = result_df[result_df["예측위험등급"] == level].copy()
         
-        icon = "" if level == "위험" else ("" if level == "주의" else "")
-        st.subheader(f"{icon} [{level} 등급] 문화재 목록 (총 {len(sub_df)}건)")
+        st.subheader(f"[{level} 등급] 문화재 목록 (총 {len(sub_df)}건)")
 
         if len(sub_df) > 0:
             display_df = sub_df[["문화재명", "재질", "노출형태"]].reset_index(drop=True)
@@ -493,4 +499,4 @@ try:
             st.info(f"현재 기상 조건상 '{level}' 등급에 해당되는 문화재가 없습니다.")
 
 except Exception as e:
-    st.error(f"예측 도중 오류가 발생했습니다: {e}")
+    st.error(f"실시간 기상 수집 또는 예측 과정에 문제가 발생했습니다: {e}")
