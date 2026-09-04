@@ -1,505 +1,287 @@
-import os
 import streamlit as st
+import requests
 import pandas as pd
-import plotly.express as px
-import folium
+import xml.etree.ElementTree as ET
+import time
+import math
+import os
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-from streamlit_folium import st_folium
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.cluster import KMeans
+st.set_page_config(page_title="전국 국가유산 데이터", page_icon="🏛️", layout="wide")
 
-st.set_page_config(
-    page_title="문화재 군집분석",
-    layout="wide"
-)
+st.title("🏛️ 전국 국가유산 데이터 수집 및 분석")
+st.markdown("국가유산 API를 이용하여 전국 국가유산 데이터를 수집하고 종목별 현황을 확인할 수 있습니다.")
 
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+BASE_URL = "https://www.khs.go.kr"
+LIST_URL = BASE_URL + "/cha/SearchKindOpenapiList.do"
 
-DATA_PATH = os.path.join(
-    BASE_DIR,
-    "data",
-    "processed",
-    "yc_heritage_feature.csv"
-)
+session = requests.Session()
+session.headers.update({"User-Agent": "Mozilla/5.0"})
 
-df = pd.read_csv(DATA_PATH, encoding="utf-8-sig")
+def safe_request(url, params=None, retry=5):
+    for i in range(retry):
+        try:
+            response = session.get(url, params=params, timeout=20)
+            if response.status_code == 200:
+                return response
+        except requests.exceptions.RequestException:
+            time.sleep(2)
+    return None
 
-st.title("📊 문화재 군집분석")
+@st.cache_data(ttl=3600)
+def collect_heritage_data():
+    params = {
+        "pageUnit": "300",
+        "pageIndex": "1",
+        "ccbaCncl": "N"
+    }
+    response = safe_request(LIST_URL, params)
+    if response is None:
+        return pd.DataFrame()
+    try:
+        root = ET.fromstring(response.content)
+    except ET.ParseError:
+        return pd.DataFrame()
+    total_text = root.findtext("totalCnt")
+    page_unit_text = root.findtext("pageUnit")
+    if not total_text:
+        return pd.DataFrame()
+    total_cnt = int(total_text)
+    page_unit = int(page_unit_text) if page_unit_text else 300
+    total_pages = math.ceil(total_cnt / page_unit)
+    all_data = []
+    progress = st.progress(0)
+    status_text = st.empty()
+    for page in range(1, total_pages + 1):
+        params["pageIndex"] = str(page)
+        response = safe_request(LIST_URL, params)
+        if response is None:
+            status_text.warning(f"{page}페이지 요청 실패")
+            continue
+        try:
+            root = ET.fromstring(response.content)
+        except ET.ParseError:
+            status_text.warning(f"{page}페이지 XML 오류")
+            continue
+        items = list(root.iter("item"))
+        for item in items:
+            all_data.append({
+                "국가유산종목": item.findtext("ccmaName"),
+                "문화재명(국문)": item.findtext("ccbaMnm1"),
+                "문화재명(한자)": item.findtext("ccbaMnm2"),
+                "시도명": item.findtext("ccbaCtcdNm"),
+                "시군구명": item.findtext("ccsiName"),
+                "관리자": item.findtext("ccbaAdmin"),
+                "종목코드": item.findtext("ccbaKdcd"),
+                "시도코드": item.findtext("ccbaCtcd"),
+                "관리번호": item.findtext("ccbaAsno"),
+                "경도": item.findtext("longitude"),
+                "위도": item.findtext("latitude")
+            })
+        progress.progress(page / total_pages)
+        status_text.info(f"데이터 수집 중... {page} / {total_pages} 페이지")
+        time.sleep(0.3)
+    progress.empty()
+    status_text.empty()
+    return pd.DataFrame(all_data)
 
-st.markdown("""
-### 📌 AI는 어떤 기준으로 군집을 나누었을까요?
+DATA_PATH = os.path.join("data", "국가유산_전체데이터.csv")
 
-AI는 **한 가지 기준이 아닌 여러 정보를 동시에 고려**하여
-비슷한 특징을 가진 문화재를 자동으로 분류했습니다.
+if os.path.exists(DATA_PATH):
+    try:
+        df = pd.read_csv(DATA_PATH, encoding="utf-8-sig")
+        st.success("GitHub에 저장된 CSV 데이터를 불러왔습니다.")
+    except Exception as e:
+        st.error(f"CSV 파일을 읽는 중 오류가 발생했습니다.\n\n{e}")
+        df = pd.DataFrame()
+else:
+    st.info("저장된 CSV 파일이 없습니다. 아래 버튼을 눌러 API에서 데이터를 가져올 수 있습니다.")
+    df = pd.DataFrame()
 
-✅ 문화재 연령
+st.subheader("📥 데이터 수집")
 
-✅ 재질
+if st.button("🌐 API에서 전국 국가유산 데이터 가져오기", use_container_width=True):
+    with st.spinner("전국 국가유산 데이터를 수집하고 있습니다..."):
+        new_df = collect_heritage_data()
+    if not new_df.empty:
+        df = new_df
+        st.success(f"총 {len(df):,}건의 데이터를 수집했습니다.")
+        csv_data = df.to_csv(index=False, encoding="utf-8-sig")
+        st.download_button(
+            label="⬇️ CSV 파일 다운로드",
+            data=csv_data,
+            file_name="국가유산_전체데이터.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+    else:
+        st.error("데이터를 가져오지 못했습니다.")
 
-✅ 노출 형태
+if df.empty:
+    st.warning("현재 표시할 데이터가 없습니다.")
+    st.stop()
 
-위 3가지 정보를 **K-Means 군집분석**으로 분석하여
-총 **4개의 군집(A~D)** 으로 분류했습니다.
-""")
+df = df.copy()
 
-data = df.copy()
-
-material_encoder = LabelEncoder()
-expose_encoder = LabelEncoder()
-
-data["재질"] = material_encoder.fit_transform(
-    data["재질"].astype(str)
-)
-
-data["노출형태"] = expose_encoder.fit_transform(
-    data["노출형태"].astype(str)
-)
-
-feature = data[
-    [
-        "문화재연령",
-        "재질",
-        "노출형태"
-    ]
+text_columns = [
+    "국가유산종목",
+    "문화재명(국문)",
+    "문화재명(한자)",
+    "시도명",
+    "시군구명",
+    "관리자",
+    "종목코드",
+    "시도코드",
+    "관리번호"
 ]
 
-scaler = StandardScaler()
+for col in text_columns:
+    if col in df.columns:
+        df[col] = df[col].fillna("").astype(str).str.strip()
 
-feature = scaler.fit_transform(feature)
+if "위도" in df.columns:
+    df["위도"] = pd.to_numeric(df["위도"], errors="coerce")
 
-model = KMeans(
-    n_clusters=4,
-    random_state=42,
-    n_init=10
-)
-
-data["cluster"] = model.fit_predict(feature)
-
-cluster_name = {
-    0: "A",
-    1: "B",
-    2: "C",
-    3: "D"
-}
-
-data["군집"] = data["cluster"].map(cluster_name)
+if "경도" in df.columns:
+    df["경도"] = pd.to_numeric(df["경도"], errors="coerce")
 
 st.divider()
+st.subheader("📊 데이터 기본 정보")
 
-st.subheader("🃏 AI가 발견한 군집 특징")
+col1, col2, col3, col4 = st.columns(4)
 
-cols = st.columns(4)
+with col1:
+    st.metric("전체 국가유산", f"{len(df):,}건")
 
-for i, group in enumerate(["A","B","C","D"]):
+with col2:
+    category_count = df["국가유산종목"].replace("", pd.NA).nunique() if "국가유산종목" in df.columns else 0
+    st.metric("국가유산 종목", f"{category_count:,}개")
 
-    temp = data[data["군집"] == group]
+with col3:
+    sido_count = df["시도명"].replace("", pd.NA).nunique() if "시도명" in df.columns else 0
+    st.metric("시도", f"{sido_count:,}개")
 
-    avg_age = int(temp["문화재연령"].mean())
+with col4:
+    sigungu_count = df["시군구명"].replace("", pd.NA).nunique() if "시군구명" in df.columns else 0
+    st.metric("시군구", f"{sigungu_count:,}개")
 
-    top_material = (
-        temp["재질"]
-        .mode()[0]
-    )
+st.divider()
+st.subheader("📋 국가유산 데이터")
 
-    top_expose = (
-        temp["노출형태"]
-        .mode()[0]
-    )
+st.dataframe(
+    df,
+    use_container_width=True,
+    height=450
+)
 
-    top_material = material_encoder.inverse_transform(
-        [top_material]
-    )[0]
+st.divider()
+st.subheader("📈 전국 국가유산 종목별 현황")
 
-    top_expose = expose_encoder.inverse_transform(
-        [top_expose]
-    )[0]
-
-    count = len(temp)
-
-    if avg_age >= 700:
-        age_text = "오래된"
-
-    elif avg_age >= 300:
-        age_text = "중간 연령의"
-
+if "국가유산종목" in df.columns:
+    nation_count = df["국가유산종목"].replace("", pd.NA).dropna().value_counts()
+    if not nation_count.empty:
+        fig, ax = plt.subplots(figsize=(12, 8))
+        sns.barplot(
+            x=nation_count.values,
+            y=nation_count.index,
+            hue=nation_count.index,
+            palette="viridis",
+            legend=False,
+            ax=ax
+        )
+        ax.set_title(
+            f"전국 국가유산 종목별 현황 (총 {len(df):,}건)",
+            fontsize=18,
+            fontweight="bold"
+        )
+        ax.set_xlabel("개수", fontsize=13)
+        ax.set_ylabel("국가유산종목", fontsize=13)
+        for i, value in enumerate(nation_count.values):
+            ax.text(
+                value + max(nation_count.values) * 0.01,
+                i,
+                f"{value:,}건",
+                va="center",
+                fontsize=10,
+                fontweight="bold"
+            )
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
     else:
-        age_text = "비교적 최근의"
+        st.warning("국가유산종목 데이터가 없습니다.")
 
-    explain = f"""
-**{age_text} 문화재**가 많으며
+st.divider()
+st.subheader("🗺️ 시도별 국가유산 현황")
 
-대표 재질은 **{top_material}**,
-
-주요 노출 형태는 **{top_expose}** 입니다.
-"""
-
-    with cols[i]:
-
-        st.metric(
-            f"{group} 군집",
-            f"{count}개"
+if "시도명" in df.columns:
+    sido_count = df["시도명"].replace("", pd.NA).dropna().value_counts()
+    if not sido_count.empty:
+        fig, ax = plt.subplots(figsize=(12, 7))
+        sns.barplot(
+            x=sido_count.values,
+            y=sido_count.index,
+            hue=sido_count.index,
+            palette="magma",
+            legend=False,
+            ax=ax
         )
-
-        st.write(f"📅 평균 연령 : {avg_age}년")
-
-        st.write(f"🪨 대표 재질 : {top_material}")
-
-        st.write(f"🏛 대표 노출 : {top_expose}")
-
-        st.info(explain)
-
-st.divider()
-# =====================================================
-# 군집 선택
-# =====================================================
-
-st.subheader("🔍 군집 선택")
-
-selected_group = st.selectbox(
-    "분석할 군집을 선택하세요.",
-    ["A", "B", "C", "D"]
-)
-
-group_df = data[data["군집"] == selected_group]
-
-avg_age = int(group_df["문화재연령"].mean())
-
-top_material = material_encoder.inverse_transform(
-    [group_df["재질"].mode()[0]]
-)[0]
-
-top_expose = expose_encoder.inverse_transform(
-    [group_df["노출형태"].mode()[0]]
-)[0]
-
-heritage_count = len(group_df)
+        ax.set_title("시도별 국가유산 개수", fontsize=18, fontweight="bold")
+        ax.set_xlabel("개수")
+        ax.set_ylabel("시도")
+        for i, value in enumerate(sido_count.values):
+            ax.text(
+                value + max(sido_count.values) * 0.01,
+                i,
+                f"{value:,}",
+                va="center"
+            )
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
 
 st.divider()
+st.subheader("🔎 국가유산 검색")
 
-# =====================================================
-# AI 해석
-# =====================================================
-
-st.subheader("🤖 AI 군집 해석")
-
-c1, c2, c3, c4 = st.columns(4)
-
-with c1:
-    st.metric(
-        "문화재 수",
-        heritage_count
-    )
-
-with c2:
-    st.metric(
-        "평균 연령",
-        f"{avg_age}년"
-    )
-
-with c3:
-    st.metric(
-        "대표 재질",
-        top_material
-    )
-
-with c4:
-    st.metric(
-        "대표 노출 형태",
-        top_expose
-    )
-
-st.info(
-f"""
-### {selected_group} 군집 분석 결과
-
-AI는 **문화재 연령**, **재질**, **노출 형태**를
-종합적으로 분석하여 이 문화재들을 같은 군집으로 분류했습니다.
-
-✔ 평균 연령 : **{avg_age}년**
-
-✔ 대표 재질 : **{top_material}**
-
-✔ 대표 노출 형태 : **{top_expose}**
-
-즉,
-
-**{top_material} 재질**의 문화재가 많고,
-
-주로 **{top_expose}** 형태로 보존되며,
-
-평균 연령은 **{avg_age}년**인 문화재들이
-비슷한 특성을 보여 하나의 군집으로 분류되었습니다.
-"""
+search_word = st.text_input(
+    "문화재 이름을 입력하세요",
+    placeholder="예: 은해사"
 )
 
-st.divider()
-
-# =====================================================
-# 군집별 문화재 개수
-# =====================================================
-
-st.subheader("📊 군집별 문화재 개수")
-
-count_df = (
-    data.groupby("군집")
-    .size()
-    .reset_index(name="문화재 수")
-)
-
-fig = px.bar(
-    count_df,
-    x="군집",
-    y="문화재 수",
-    color="군집",
-    text="문화재 수"
-)
-
-fig.update_layout(
-    showlegend=False,
-    xaxis_title="군집",
-    yaxis_title="개수"
-)
-
-st.plotly_chart(
-    fig,
-    use_container_width=True
-)
-
-# =====================================================
-# 재질 분포
-# =====================================================
-
-st.subheader("🪨 선택한 군집의 재질 분포")
-
-material_df = (
-    group_df.groupby("재질")
-    .size()
-    .reset_index(name="개수")
-)
-
-material_df["재질"] = material_encoder.inverse_transform(
-    material_df["재질"]
-)
-
-fig = px.pie(
-    material_df,
-    names="재질",
-    values="개수",
-    hole=0.4
-)
-
-st.plotly_chart(
-    fig,
-    use_container_width=True
-)
-
-# =====================================================
-# 노출 형태 분포
-# =====================================================
-
-st.subheader("🏛 선택한 군집의 노출 형태")
-
-expose_df = (
-    group_df.groupby("노출형태")
-    .size()
-    .reset_index(name="개수")
-)
-
-expose_df["노출형태"] = expose_encoder.inverse_transform(
-    expose_df["노출형태"]
-)
-
-fig = px.bar(
-    expose_df,
-    x="노출형태",
-    y="개수",
-    color="노출형태",
-    text="개수"
-)
-
-fig.update_layout(
-    showlegend=False
-)
-
-st.plotly_chart(
-    fig,
-    use_container_width=True
-)
-
-st.divider()
-
-# =====================================================
-# 군집별 지도
-# =====================================================
-
-st.subheader("🗺️ 선택한 군집의 위치")
-
-color_map = {
-    "A": "blue",
-    "B": "green",
-    "C": "orange",
-    "D": "red"
-}
-
-center_lat = group_df["위도"].mean()
-center_lon = group_df["경도"].mean()
-
-m = folium.Map(
-    location=[center_lat, center_lon],
-    zoom_start=11
-)
-
-for _, row in group_df.iterrows():
-
-    material = material_encoder.inverse_transform(
-        [row["재질"]]
-    )[0]
-
-    expose = expose_encoder.inverse_transform(
-        [row["노출형태"]]
-    )[0]
-
-    popup = f"""
-    <b>{row['문화재명(국문)']}</b><br><br>
-
-    <b>군집</b> : {row['군집']}<br>
-
-    <b>국가유산종목</b> : {row['국가유산종목']}<br>
-
-    <b>시대</b> : {row['시대그룹']}<br>
-
-    <b>문화재 연령</b> : {int(row['문화재연령'])}년<br>
-
-    <b>재질</b> : {material}<br>
-
-    <b>노출 형태</b> : {expose}
-    """
-
-    folium.Marker(
-        location=[row["위도"], row["경도"]],
-        tooltip=row["문화재명(국문)"],
-        popup=popup,
-        icon=folium.Icon(
-            color=color_map[selected_group],
-            icon="info-sign"
+if search_word:
+    search_result = df[
+        df["문화재명(국문)"].str.contains(
+            search_word,
+            case=False,
+            na=False
         )
-    ).add_to(m)
-
-st_folium(
-    m,
-    width=None,
-    height=600,
-    use_container_width=True
-)
-
-st.caption("📍 핀을 클릭하면 문화재 정보를 확인할 수 있습니다.")
-
-st.divider()
-
-# =====================================================
-# 문화재 목록
-# =====================================================
-
-st.subheader(f"📋 {selected_group} 군집 문화재 목록")
-
-table = group_df[
-    [
-        "문화재명(국문)",
-        "국가유산종목",
-        "시대그룹",
-        "문화재연령",
-        "재질",
-        "노출형태"
     ]
-].copy()
+    st.write(f"검색 결과: **{len(search_result):,}건**")
+    if not search_result.empty:
+        st.dataframe(
+            search_result,
+            use_container_width=True,
+            height=400
+        )
+    else:
+        st.warning("검색 결과가 없습니다.")
 
-table["재질"] = material_encoder.inverse_transform(
-    table["재질"]
+st.divider()
+st.subheader("💾 데이터 다운로드")
+
+csv_data = df.to_csv(
+    index=False,
+    encoding="utf-8-sig"
 )
 
-table["노출형태"] = expose_encoder.inverse_transform(
-    table["노출형태"]
-)
-
-table = table.rename(
-    columns={
-        "문화재명(국문)":"문화재명",
-        "국가유산종목":"종목",
-        "시대그룹":"시대",
-        "문화재연령":"연령(년)"
-    }
-)
-
-st.dataframe(
-    table,
-    use_container_width=True,
-    hide_index=True
+st.download_button(
+    label="⬇️ 국가유산 전체 CSV 다운로드",
+    data=csv_data,
+    file_name="국가유산_전체데이터.csv",
+    mime="text/csv",
+    use_container_width=True
 )
 
 st.divider()
-
-# =====================================================
-# 군집 비교
-# =====================================================
-
-st.subheader("📑 군집 비교")
-
-summary = (
-    data.groupby("군집")
-    .agg(
-        평균연령=("문화재연령","mean"),
-        문화재수=("군집","count")
-    )
-    .reset_index()
-)
-
-summary["대표재질"] = ""
-
-summary["대표노출"] = ""
-
-for i in summary.index:
-
-    g = summary.loc[i,"군집"]
-
-    tmp = data[data["군집"]==g]
-
-    summary.loc[i,"대표재질"] = material_encoder.inverse_transform(
-        [tmp["재질"].mode()[0]]
-    )[0]
-
-    summary.loc[i,"대표노출"] = expose_encoder.inverse_transform(
-        [tmp["노출형태"].mode()[0]]
-    )[0]
-
-summary["평균연령"] = summary["평균연령"].astype(int)
-
-st.dataframe(
-    summary,
-    use_container_width=True,
-    hide_index=True
-)
-
-st.divider()
-
-st.success("✅ AI 군집분석이 완료되었습니다.")
-
-st.markdown("""
-### 💡 분석 결과 해석
-
-이번 군집분석은 하나의 기준이 아닌
-
-- 📅 문화재 연령
-- 🪨 재질
-- 🏛 노출 형태
-
-를 **동시에 고려**하여 수행되었습니다.
-
-즉, 같은 군집에 속한 문화재는
-세 가지 특성이 서로 비슷한 문화재라는 의미입니다.
-
-지도에서는 선택한 군집만 표시되므로
-공간적으로 어떤 지역에 분포하는지 쉽게 확인할 수 있으며,
-
-문화재 목록을 통해
-같은 특징을 가진 문화재를 한눈에 비교할 수 있습니다.
-""")
+st.caption("국가유산 API를 활용한 전국 국가유산 데이터 수집 및 분석")
