@@ -63,14 +63,12 @@ heritage_df.columns = (
 # =====================================================
 
 required_columns = [
-
     "국가유산연계번호",
     "문화재명(국문)",
     "국가유산종목",
     "시대",
     "위도",
     "경도"
-
 ]
 
 missing_columns = [
@@ -80,12 +78,10 @@ missing_columns = [
 ]
 
 if missing_columns:
-
     st.error(
         "❌ 다음 필수 컬럼이 원본 데이터에 없습니다:\n\n"
         + "\n".join(missing_columns)
     )
-
     st.stop()
 
 
@@ -105,99 +101,75 @@ def simplify_era(text):
 
     text = str(text).strip()
 
-    # -------------------------------------------------
     # 청동기
-    # -------------------------------------------------
-
     if "청동기" in text:
         return "청동기"
 
-    # -------------------------------------------------
     # 신라
-    # -------------------------------------------------
-
     elif (
-        "통일신라" in text or
-        "신라시대 후기" in text
+        "통일신라" in text
+        or "신라시대 후기" in text
     ):
         return "통일신라"
 
     elif "신라" in text:
         return "신라"
 
-    # -------------------------------------------------
     # 고려
-    # -------------------------------------------------
-
     elif (
-        "고려시대 초기" in text or
-        "고려 초기" in text
+        "고려시대 초기" in text
+        or "고려 초기" in text
     ):
         return "고려초기"
 
     elif (
-        "고려시대 말기" in text or
-        "고려 말기" in text
+        "고려시대 말기" in text
+        or "고려 말기" in text
     ):
         return "고려후기"
 
     elif "고려" in text:
         return "고려"
 
-    # -------------------------------------------------
     # 조선 초기
-    # -------------------------------------------------
-
     elif (
-        "세종" in text or
-        "태조" in text or
-        "태종" in text or
-        "세조" in text or
-        "성종" in text or
-        "중종" in text or
-        "인종" in text
+        "세종" in text
+        or "태조" in text
+        or "태종" in text
+        or "세조" in text
+        or "성종" in text
+        or "중종" in text
+        or "인종" in text
     ):
         return "조선초기"
 
-    # -------------------------------------------------
     # 조선 후기
-    # -------------------------------------------------
-
     elif (
-        "숙종" in text or
-        "영조" in text or
-        "정조" in text or
-        "순조" in text or
-        "철종" in text or
-        "고종" in text or
-        "광해군" in text
+        "숙종" in text
+        or "영조" in text
+        or "정조" in text
+        or "순조" in text
+        or "철종" in text
+        or "고종" in text
+        or "광해군" in text
     ):
         return "조선후기"
 
-    # -------------------------------------------------
     # 조선 직접 표기
-    # -------------------------------------------------
-
     elif (
-        "조선시대 후기" in text or
-        "조선 후기" in text
+        "조선시대 후기" in text
+        or "조선 후기" in text
     ):
         return "조선후기"
 
     elif "조선" in text:
         return "조선"
 
-    # -------------------------------------------------
     # 대한제국
-    # -------------------------------------------------
-
     elif "대한제국" in text:
         return "대한제국"
 
-    # -------------------------------------------------
     # 연도 기반 추정
-    # -------------------------------------------------
-
     year_match = re.search(
         r"\d{4}",
         text
@@ -256,7 +228,6 @@ era_year_map = {
     "대한제국": 1900,
 
     "기타": 1900
-
 }
 
 
@@ -275,10 +246,8 @@ feature_df["추정제작연도"] = (
 # =====================================================
 
 feature_df["문화재연령"] = (
-
     CURRENT_YEAR
     - feature_df["추정제작연도"]
-
 )
 
 
@@ -295,7 +264,6 @@ feature_df["노출형태"] = "반실외"
 # =====================================================
 
 stone_keywords = [
-
     "석탑",
     "석조",
     "석불",
@@ -304,12 +272,9 @@ stone_keywords = [
     "태실",
     "옥비",
     "봉수"
-
 ]
 
-
 wood_keywords = [
-
     "고택",
     "서원",
     "향교",
@@ -322,30 +287,23 @@ wood_keywords = [
     "사당",
     "누각",
     "교회"
-
 ]
 
-
 metal_keywords = [
-
     "철조",
     "금동",
     "청동",
     "범종",
     "북"
-
 ]
 
-
 painting_keywords = [
-
     "탱화",
     "괘불",
     "초상",
     "영정",
     "불화",
     "도"
-
 ]
 
 
@@ -359,36 +317,28 @@ for idx, row in feature_df.iterrows():
         row["문화재명(국문)"]
     )
 
-    # 석조
     if any(
         keyword in name
         for keyword in stone_keywords
     ):
-
         feature_df.loc[idx, "재질"] = "석조"
 
-    # 목조
     elif any(
         keyword in name
         for keyword in wood_keywords
     ):
-
         feature_df.loc[idx, "재질"] = "목조"
 
-    # 금속
     elif any(
         keyword in name
         for keyword in metal_keywords
     ):
-
         feature_df.loc[idx, "재질"] = "금속"
 
-    # 회화
     elif any(
         keyword in name
         for keyword in painting_keywords
     ):
-
         feature_df.loc[idx, "재질"] = "회화"
 
 
@@ -397,7 +347,6 @@ for idx, row in feature_df.iterrows():
 # =====================================================
 
 indoor_keywords = [
-
     "탱화",
     "괘불",
     "초상",
@@ -405,18 +354,14 @@ indoor_keywords = [
     "불화",
     "북",
     "불상"
-
 ]
 
-
 outdoor_keywords = [
-
     "석탑",
     "비",
     "암각화",
     "봉수",
     "태실"
-
 ]
 
 
@@ -430,25 +375,19 @@ for idx, row in feature_df.iterrows():
         row["문화재명(국문)"]
     )
 
-    # 실내
     if any(
         keyword in name
         for keyword in indoor_keywords
     ):
-
         feature_df.loc[idx, "노출형태"] = "실내"
 
-    # 실외
     elif any(
         keyword in name
         for keyword in outdoor_keywords
     ):
-
         feature_df.loc[idx, "노출형태"] = "실외"
 
-    # 나머지
     else:
-
         feature_df.loc[idx, "노출형태"] = "반실외"
 
 
@@ -457,21 +396,16 @@ for idx, row in feature_df.iterrows():
 # =====================================================
 
 feature_df = feature_df[[
-
     "국가유산연계번호",
     "문화재명(국문)",
     "국가유산종목",
-
     "시대그룹",
     "추정제작연도",
     "문화재연령",
-
     "재질",
     "노출형태",
-
     "위도",
     "경도"
-
 ]]
 
 
@@ -515,19 +449,17 @@ st.write(
 # 18. CSV 다운로드
 # =====================================================
 
+# UTF-8-SIG로 바이트 변환하여
+# 엑셀에서도 한글이 깨지지 않도록 처리
+
 csv_data = feature_df.to_csv(
-    index=False,
-    encoding="utf-8-sig"
-)
+    index=False
+).encode("utf-8-sig")
+
 
 st.download_button(
-
     label="📥 문화재 특성 데이터셋 다운로드",
-
     data=csv_data,
-
     file_name="영천_문화재_특성데이터셋.csv",
-
-    mime="text/csv"
-
+    mime="text/csv; charset=utf-8"
 )
