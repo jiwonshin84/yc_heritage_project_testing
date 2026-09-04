@@ -3,6 +3,7 @@ import re
 import time
 import pandas as pd
 import requests
+import streamlit as st
 
 # ==========================================================
 # 1. 카카오 API KEY
@@ -14,17 +15,19 @@ headers = {
 }
 
 # ==========================================================
-# 2. CSV 불러오기 (파일 존재 여부 확인)
+# 2. CSV 불러오기 (pages 폴더 경로 적용)
 # ==========================================================
-file_name = "영천_국가유산_상세.csv"
+file_path = "pages/영천_국가유산_상세.csv"
 
-if not os.path.exists(file_name):
-    print(f"❌ '{file_name}' 파일이 현재 폴더에 없습니다!")
-    print("스크립트와 같은 폴더에 CSV 파일을 위치시켜 주세요.")
-    exit()
+# pages 폴더에 없을 경우 기본 경로 확인
+if not os.path.exists(file_path):
+    file_path = "영천_국가유산_상세.csv"
 
-df = pd.read_csv(file_name, encoding="utf-8-sig")
-print("불러온 데이터 건수:", len(df))
+if not os.path.exists(file_path):
+    st.error("❌ CSV 파일을 찾을 수 없습니다. pages 폴더에 '영천_국가유산_상세.csv' 파일을 올려주세요.")
+    st.stop()
+
+df = pd.read_csv(file_path, encoding="utf-8-sig")
 
 # ==========================================================
 # 3. 수동 좌표 보정
@@ -87,10 +90,6 @@ def get_coord_address(query):
 # ==========================================================
 # 5. 좌표 보완 순회
 # ==========================================================
-success = 0
-fail = 0
-fail_list = []
-
 for i in df.index:
     lat = pd.to_numeric(df.loc[i, "위도"], errors="coerce")
     lon = pd.to_numeric(df.loc[i, "경도"], errors="coerce")
@@ -119,22 +118,21 @@ for i in df.index:
     df.loc[i, "위도"] = new_lat
     df.loc[i, "경도"] = new_lon
 
-    if new_lat is not None:
-        success += 1
-        print(f"성공 → {name}")
-    else:
-        fail += 1
-        fail_list.append(name)
-        print(f"실패 → {name}")
-
-    time.sleep(0.2)
-
-print("\n==================================================")
-print(f"보완 성공: {success}건 | 보완 실패: {fail}건")
+    time.sleep(0.1)
 
 # ==========================================================
-# 6. 저장
+# 6. Streamlit 화면 출력
 # ==========================================================
-save_path = "영천_국가유산_상세_좌표보완.csv"
-df.to_csv(save_path, index=False, encoding="utf-8-sig")
-print(f"\n저장 완료: {save_path}")
+st.title("📍 영천 국가유산 지도")
+st.write(f"총 **{len(df)}**건의 데이터가 로드되었습니다.")
+
+# 지도용 데이터 프레임 준비 (NaN 제거)
+map_data = df.dropna(subset=["위도", "경도"]).copy()
+map_data["latitude"] = pd.to_numeric(map_data["위도"])
+map_data["longitude"] = pd.to_numeric(map_data["경도"])
+
+# 지도 표출
+st.map(map_data[["latitude", "longitude"]])
+
+# 데이터 목록 표출
+st.dataframe(df)
