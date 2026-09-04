@@ -9,29 +9,41 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import folium
 from streamlit_folium import st_folium
+import os
+import matplotlib.font_manager as fm
 
 # ==========================================================
-# 페이지 기본 설정 & 한글 폰트 (Streamlit Cloud 환경 대응)
+# 페이지 기본 설정
 # ==========================================================
 st.set_page_config(
-    page_title="국가유산 데이터 수집 및 분석",
+    page_title="전국 국가유산 무결성 수집 시스템",
     page_icon="🏛️",
     layout="wide"
 )
 
-# Matplotlib 한글 폰트 설정 (OS별 자동 매핑)
-import platform
-if platform.system() == 'Windows':
-    plt.rc('font', family='Malgun Gothic')
-elif platform.system() == 'Darwin':
-    plt.rc('font', family='AppleGothic')
-else:
-    plt.rc('font', family='NanumGothic')
+# ==========================================================
+# 한글 폰트 자동 설정 (Streamlit Cloud & 로컬 공통 대응)
+# ==========================================================
+@st.cache_resource
+def set_korean_font():
+    # 나눔고딕 폰트 파일이 없으면 자동으로 다운로드
+    font_file = "NanumGothic.ttf"
+    if not os.path.exists(font_file):
+        url = "https://github.com/google/fonts/raw/main/ofl/nanumgothic/NanumGothic-Regular.ttf"
+        r = requests.get(url)
+        with open(font_file, "wb") as f:
+            f.write(r.content)
+    
+    # Matplotlib 폰트 등록
+    fm.fontManager.addfont(font_file)
+    font_prop = fm.FontProperties(fname=font_file)
+    plt.rc('font', family=font_prop.get_name())
+    plt.rcParams["axes.unicode_minus"] = False
 
-plt.rcParams["axes.unicode_minus"] = False
+set_korean_font()
 
 # ==========================================================
-# API 관련 공통 함수
+# API 세션 및 요청 함수
 # ==========================================================
 BASE_URL = "https://www.khs.go.kr"
 LIST_URL = BASE_URL + "/cha/SearchKindOpenapiList.do"
@@ -55,8 +67,7 @@ def safe_request(url, params=None, retry=5):
             time.sleep(2)
     return None
 
-# 목록 수집 함수 (캐싱 적용)
-@st.cache_data(show_spinner=False)
+# 목록 수집 함수
 def fetch_national_heritage_list():
     params = {"pageUnit": "300", "pageIndex": "1", "ccbaCncl": "N"}
     response = safe_request(LIST_URL, params)
@@ -87,17 +98,17 @@ def fetch_national_heritage_list():
                     "시도명": item.findtext("ccbaCtcdNm"),
                     "시군구명": item.findtext("ccsiName"),
                     "관리자": item.findtext("ccbaAdmin"),
-                    "종목코드": item.findtext("ccbaKdcd"),
-                    "시도코드": item.findtext("ccbaCtcd"),
-                    "관리번호": item.findtext("ccbaAsno"),
+                    "종목코드": str(item.findtext("ccbaKdcd")),
+                    "시도코드": str(item.findtext("ccbaCtcd")),
+                    "관리번호": str(item.findtext("ccbaAsno")),
                     "경도": item.findtext("longitude"),
                     "위도": item.findtext("latitude")
                 })
         
         progress = page / total_pages
         progress_bar.progress(progress)
-        status_text.text(f"목록 수집 진행 중: {page}/{total_pages} 페이지 완료")
-        time.sleep(0.1)
+        status_text.text(f"수집 진행 상황: {page}/{total_pages} 페이지 완료")
+        time.sleep(0.05)
 
     progress_bar.empty()
     status_text.empty()
@@ -152,30 +163,32 @@ def get_detail(ccbaKdcd, ccbaAsno, ccbaCtcd):
 # ==========================================================
 # Streamlit 대시보드 UI
 # ==========================================================
-st.title("🏛️ 전국 및 지역별 국가유산 데이터 수집 & 분석")
+st.title("🏛️ 전국 국가유산 수집 및 지역별 분석 대시보드")
 
-st.sidebar.header("📌 메뉴")
-menu = st.sidebar.radio("원하는 작업을 선택하세요", ["전국 데이터 수집 및 분석", "영천 지역 데이터 분석 및 상세조회"])
+st.sidebar.header("📍 메뉴 선택")
+menu = st.sidebar.radio("원하는 기능을 선택하세요", ["메뉴 1: 전국 데이터 수집 및 분석", "메뉴 2: 영천 지역 데이터 분석 및 상세조회"])
 
 # ----------------------------------------------------------
 # 메뉴 1: 전국 데이터 수집 및 분석
 # ----------------------------------------------------------
-if menu == "전국 데이터 수집 및 분석":
+if menu == "메뉴 1: 전국 데이터 수집 및 분석":
     st.header("1. 전국 국가유산 데이터 목록 수집")
     
-    if st.button("🚀 전국 데이터 수집 시작"):
-        with st.spinner("공공 API로부터 전체 데이터를 수집하고 있습니다..."):
-            df_nation = fetch_national_heritage_list()
-            st.session_state["df_nation"] = df_nation
-            st.success(f"수집 완료! 총 {len(df_nation)}건의 데이터를 불러왔습니다.")
+    col1, col2 = st.columns([1, 4])
+    with col1:
+        if st.button("🚀 전국 데이터 수집 시작"):
+            with st.spinner("데이터 수집 중..."):
+                df_nation = fetch_national_heritage_list()
+                st.session_state["df_nation"] = df_nation
+                st.success(f"수집 완료! 총 {len(df_nation)}건")
 
     if "df_nation" in st.session_state and not st.session_state["df_nation"].empty:
         df_nation = st.session_state["df_nation"]
         
-        st.subheader("📊 전국 국가유산 목록 미리보기")
-        st.dataframe(df_nation.head(10))
+        st.subheader("📊 전국 국가유산 데이터 목록")
+        st.dataframe(df_nation, use_container_width=True)
 
-        # CSV 다운로드 버튼
+        # CSV 다운로드
         csv_data = df_nation.to_csv(index=False, encoding="utf-8-sig")
         st.download_button(
             label="💾 전국 데이터 CSV 다운로드",
@@ -184,6 +197,7 @@ if menu == "전국 데이터 수집 및 분석":
             mime="text/csv"
         )
 
+        # 그래프 시각화
         st.subheader("📈 전국 국가유산 종목별 현황")
         nation_count = df_nation["국가유산종목"].value_counts()
 
@@ -209,28 +223,28 @@ if menu == "전국 데이터 수집 및 분석":
 # ----------------------------------------------------------
 # 메뉴 2: 영천 지역 데이터 분석 및 상세조회
 # ----------------------------------------------------------
-elif menu == "영천 지역 데이터 분석 및 상세조회":
-    st.header("2. 영천 국가유산 데이터 추출 및 상세조회")
+elif menu == "메뉴 2: 영천 지역 데이터 분석 및 상세조회":
+    st.header("2. 영천 지역 데이터 분석 및 상세조회")
 
-    # 기존 수집 데이터가 없는 경우를 위한 처리
-    if "df_nation" not in st.session_state:
-        st.warning("먼저 '전국 데이터 수집 및 분석' 메뉴에서 데이터를 수집하거나, 기존 CSV 파일을 업로드해 주세요.")
-        uploaded_file = st.file_uploader("기존 '국가유산_전체데이터.csv' 파일 업로드", type=["csv"])
+    # 데이터 입력 처리 (수집 데이터 활용 또는 CSV 직접 업로드)
+    if "df_nation" not in st.session_state or st.session_state["df_nation"].empty:
+        st.info("💡 '메뉴 1'에서 수집한 데이터가 없습니다. 직접 수집하거나 수집해 둔 CSV 파일을 올려주세요.")
+        uploaded_file = st.file_uploader("📂 '국가유산_전체데이터.csv' 파일 업로드", type=["csv"])
         if uploaded_file is not None:
-            df_nation = pd.read_csv(uploaded_file, dtype={"종목코드": str, "관리번호": str, "시도코드": str})
-            st.session_state["df_nation"] = df_nation
-            st.success("CSV 파일 업로드 완료!")
-    
-    if "df_nation" in st.session_state:
+            st.session_state["df_nation"] = pd.read_csv(uploaded_file, dtype={"종목코드": str, "관리번호": str, "시도코드": str})
+            st.rerun()
+
+    # 데이터가 존재하는 경우 메인 로직 실행
+    if "df_nation" in st.session_state and not st.session_state["df_nation"].empty:
         df_nation = st.session_state["df_nation"]
         
-        # 영천 데이터 추출
+        # 영천 데이터 필터링
         yc_df = df_nation[df_nation["시군구명"].astype(str).str.contains("영천", na=False)].copy()
         
-        st.metric(label="📍 영천시 수집 문화재 수", value=f"{len(yc_df)} 건")
-        st.dataframe(yc_df[["문화재명(국문)", "국가유산종목", "종목코드", "관리번호"]].head())
+        st.metric(label="📍 영천시 지정 문화재 수", value=f"{len(yc_df)} 건")
+        st.dataframe(yc_df[["문화재명(국문)", "국가유산종목", "종목코드", "관리번호"]], use_container_width=True)
 
-        # 종목별 시각화
+        # 영천 데이터 그래프 시각화
         st.subheader("📊 영천 국가유산 종목 분포")
         yc_count = yc_df["국가유산종목"].value_counts()
 
@@ -243,9 +257,9 @@ elif menu == "영천 지역 데이터 분석 및 상세조회":
             legend=False,
             ax=ax
         )
-        ax.set_title(f"영천 국가유산 종목 분포 ({len(yc_df)}건)")
+        ax.set_title(f"영천 국가유산 종목 분포 ({len(yc_df)}건)", fontsize=13)
         ax.set_xlabel("개수")
-        ax.set_ylabel("종목")
+        ax.set_ylabel("국가유산종목")
 
         for i, v in enumerate(yc_count.values):
             ax.text(v + 0.2, i, f"{v}건", va="center", fontsize=10, weight="bold")
@@ -253,9 +267,11 @@ elif menu == "영천 지역 데이터 분석 및 상세조회":
         plt.tight_layout()
         st.pyplot(fig)
 
-        # 상세정보 수집
+        # 영천 상세 정보 수집
+        st.divider()
         st.subheader("🔍 영천 국가유산 상세조회 진행")
-        if st.button("⚡ 영천 상세데이터 수집 실행"):
+        
+        if st.button("⚡ 영천 상세데이터 API 수집 시작"):
             detail_list = []
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -268,22 +284,23 @@ elif menu == "영천 지역 데이터 분석 및 상세조회":
 
                 progress = (idx + 1) / total_items
                 progress_bar.progress(progress)
-                status_text.text(f"상세조회 진행 중: {idx+1}/{total_items}")
-                time.sleep(0.3)
+                status_text.text(f"상세 정보 수집 중: {idx+1}/{total_items}")
+                time.sleep(0.2)
 
             progress_bar.empty()
             status_text.empty()
 
             df_detail = pd.DataFrame(detail_list)
             st.session_state["df_detail"] = df_detail
-            st.success("영천 국가유산 상세 정보 수집 완료!")
+            st.success("영천 상세 데이터 수집 완료!")
 
+        # 상세 데이터 출력
         if "df_detail" in st.session_state and not st.session_state["df_detail"].empty:
             df_detail = st.session_state["df_detail"]
-            st.subheader("📋 영천 국가유산 상세 데이터 미리보기")
-            st.dataframe(df_detail.head())
+            st.subheader("📋 영천 국가유산 상세 데이터 결과")
+            st.dataframe(df_detail, use_container_width=True)
 
-            # 상세 데이터 CSV 다운로드
+            # 상세 CSV 다운로드
             csv_detail_data = df_detail.to_csv(index=False, encoding="utf-8-sig")
             st.download_button(
                 label="💾 영천 상세 데이터 CSV 다운로드",
@@ -292,7 +309,7 @@ elif menu == "영천 지역 데이터 분석 및 상세조회":
                 mime="text/csv"
             )
 
-            # 지도 시각화 (위도/경도 데이터 존재 시)
+            # 지도 시각화
             if "위도" in df_detail.columns and "경도" in df_detail.columns:
                 st.subheader("🗺️ 영천 국가유산 지도 위치")
                 valid_geo = df_detail.dropna(subset=["위도", "경도"]).copy()
@@ -308,4 +325,4 @@ elif menu == "영천 지역 데이터 분석 및 상세조회":
                             popup=f"<b>{r['문화재명(국문)']}</b><br>{r['소재지상세']}",
                             tooltip=r["문화재명(국문)"]
                         ).add_to(m)
-                    st_folium(m, width=800, height=500)
+                    st_folium(m, width=1000, height=500)
