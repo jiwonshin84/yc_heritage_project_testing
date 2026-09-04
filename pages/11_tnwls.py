@@ -1,7 +1,8 @@
-import time
+import os
 import re
-import requests
+import time
 import pandas as pd
+import requests
 
 # ==========================================================
 # 1. 카카오 API KEY
@@ -13,18 +14,20 @@ headers = {
 }
 
 # ==========================================================
-# 2. CSV 불러오기
+# 2. CSV 불러오기 (파일 존재 여부 확인)
 # ==========================================================
-# 실행 환경에 맞게 경로를 지정해주세요.
-df = pd.read_csv(
-    "/content/drive/MyDrive/00. 2026학년도 인재양성프로젝트/공공데이터 기반 프로젝트/dataset/영천_국가유산_상세.csv",
-    encoding="utf-8-sig"
-)
+file_name = "영천_국가유산_상세.csv"
 
+if not os.path.exists(file_name):
+    print(f"❌ '{file_name}' 파일이 현재 폴더에 없습니다!")
+    print("스크립트와 같은 폴더에 CSV 파일을 위치시켜 주세요.")
+    exit()
+
+df = pd.read_csv(file_name, encoding="utf-8-sig")
 print("불러온 데이터 건수:", len(df))
 
 # ==========================================================
-# 3. 수동 좌표 보정 딕셔너리
+# 3. 수동 좌표 보정
 # ==========================================================
 manual_coords = {
     "임고서원은행나무": (35.9907, 128.9475),
@@ -32,7 +35,7 @@ manual_coords = {
 }
 
 # ==========================================================
-# 4. 정제 함수 정의
+# 4. 정제 및 API 검색 함수
 # ==========================================================
 def clean_address(addr):
     if pd.isnull(addr):
@@ -92,7 +95,6 @@ for i in df.index:
     lat = pd.to_numeric(df.loc[i, "위도"], errors="coerce")
     lon = pd.to_numeric(df.loc[i, "경도"], errors="coerce")
 
-    # 이미 유효한 좌표가 존재하는 경우 스킵
     if pd.notnull(lat) and pd.notnull(lon) and lat != 0 and lon != 0:
         continue
 
@@ -101,26 +103,16 @@ for i in df.index:
 
     new_lat, new_lon = None, None
 
-    # 1차 수동 보정
     if name in manual_coords:
         new_lat, new_lon = manual_coords[name]
     else:
-        # 2차 키워드 검색
         new_lat, new_lon = get_coord_keyword(name)
-        
-        # 3차 정제명 검색
         if new_lat is None:
             new_lat, new_lon = get_coord_keyword(refine_name(name))
-            
-        # 4차 주소 검색
         if new_lat is None:
             new_lat, new_lon = get_coord_address(clean_address(addr))
-            
-        # 5차 "영천 " + 키워드 검색
         if new_lat is None:
             new_lat, new_lon = get_coord_keyword("영천 " + name)
-            
-        # 6차 "영천 " + 정제명 검색
         if new_lat is None:
             new_lat, new_lon = get_coord_keyword("영천 " + refine_name(name))
 
@@ -141,8 +133,8 @@ print("\n==================================================")
 print(f"보완 성공: {success}건 | 보완 실패: {fail}건")
 
 # ==========================================================
-# 6. 저장 (깃허브 웹용 파일명)
+# 6. 저장
 # ==========================================================
-save_path = "/content/영천_국가유산_상세_좌표보완.csv"
+save_path = "영천_국가유산_상세_좌표보완.csv"
 df.to_csv(save_path, index=False, encoding="utf-8-sig")
-print(f"파일 저장 완료: {save_path}")
+print(f"\n저장 완료: {save_path}")
