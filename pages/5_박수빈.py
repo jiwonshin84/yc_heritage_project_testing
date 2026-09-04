@@ -27,28 +27,39 @@ st.title("🏛️ 문화재 환경 위험도 분석")
 
 
 # ============================================================
-# 1. CSV 파일 자동 찾기
+# 1. 필요한 기상 데이터 컬럼
+# ============================================================
+
+required_cols = [
+    "temp_avg",
+    "temp_max",
+    "temp_min",
+    "humidity",
+    "rainfall",
+    "wind_speed",
+    "solar_radiation",
+    "ground_temp",
+    "pm10",
+    "pm25",
+    "o3",
+    "no2",
+    "co",
+    "so2"
+]
+
+
+# ============================================================
+# 2. 프로젝트 안의 CSV 찾기
 # ============================================================
 
 st.header("1. 데이터 불러오기")
 
-
-# 현재 프로젝트 위치 확인
-current_dir = os.getcwd()
-
-st.write(
-    f"현재 작업 폴더: `{current_dir}`"
-)
-
-
-# 프로젝트 내부의 모든 CSV 검색
 csv_files = glob.glob(
     "**/*.csv",
     recursive=True
 )
 
 
-# CSV가 없는 경우
 if len(csv_files) == 0:
 
     st.error(
@@ -56,57 +67,180 @@ if len(csv_files) == 0:
     )
 
     st.info(
-        "CSV 파일을 GitHub 프로젝트에 업로드했는지 확인해주세요."
+        "GitHub 프로젝트에 CSV 파일이 업로드되어 있는지 확인해주세요."
     )
 
     st.stop()
 
 
-# CSV 파일 목록 표시
 st.success(
     f"CSV 파일 {len(csv_files)}개를 찾았습니다."
 )
 
 
-with st.expander("찾은 CSV 파일 확인"):
+# ============================================================
+# 3. 각 CSV의 컬럼 확인
+# ============================================================
 
-    for file in csv_files:
+csv_info = []
 
-        st.write(
-            f"- {file}"
+
+for file in csv_files:
+
+    try:
+
+        temp_df = pd.read_csv(
+            file,
+            encoding="utf-8-sig",
+            nrows=5
         )
 
+    except Exception:
 
-# ============================================================
-# 2. CSV 선택
-# ============================================================
+        try:
 
-# CSV가 하나면 자동 선택
-if len(csv_files) == 1:
+            temp_df = pd.read_csv(
+                file,
+                encoding="cp949",
+                nrows=5
+            )
 
-    csv_path = csv_files[0]
+        except Exception:
 
-else:
+            continue
 
-    csv_path = st.selectbox(
-        "사용할 CSV 파일을 선택하세요.",
-        csv_files
+
+    temp_df.columns = (
+        temp_df.columns
+        .astype(str)
+        .str.strip()
     )
 
 
-st.info(
-    f"📂 사용 중인 데이터: `{csv_path}`"
-)
+    columns = temp_df.columns.tolist()
+
+
+    # 필요한 기상 컬럼이 몇 개 있는지 계산
+    match_count = sum(
+        col in columns
+        for col in required_cols
+    )
+
+
+    csv_info.append({
+
+        "file": file,
+
+        "columns": columns,
+
+        "match_count": match_count
+    })
 
 
 # ============================================================
-# 3. CSV 읽기
+# 4. CSV 선택
+# ============================================================
+
+if len(csv_info) == 0:
+
+    st.error(
+        "CSV 파일을 읽을 수 없습니다."
+    )
+
+    st.stop()
+
+
+# 필요한 컬럼이 가장 많은 CSV
+best_csv = max(
+    csv_info,
+    key=lambda x: x["match_count"]
+)
+
+
+# 필요한 컬럼을 모두 가지고 있는 파일이 있으면
+# 그 파일을 자동 선택
+perfect_matches = [
+
+    item["file"]
+
+    for item in csv_info
+
+    if item["match_count"] == len(required_cols)
+]
+
+
+if len(perfect_matches) > 0:
+
+    default_file = perfect_matches[0]
+
+else:
+
+    default_file = best_csv["file"]
+
+
+# ============================================================
+# 5. CSV 선택 메뉴
+# ============================================================
+
+st.subheader(
+    "CSV 파일 선택"
+)
+
+
+csv_names = [
+    item["file"]
+    for item in csv_info
+]
+
+
+default_index = csv_names.index(
+    default_file
+)
+
+
+selected_file = st.selectbox(
+    "사용할 CSV 파일",
+    csv_names,
+    index=default_index
+)
+
+
+# 선택한 파일의 정보
+selected_info = next(
+    item
+    for item in csv_info
+    if item["file"] == selected_file
+)
+
+
+st.info(
+    f"📂 현재 선택된 파일: `{selected_file}`"
+)
+
+
+st.write(
+    f"필요한 기상 컬럼 일치 개수: "
+    f"**{selected_info['match_count']} / {len(required_cols)}**"
+)
+
+
+with st.expander(
+    "선택된 CSV의 컬럼 확인"
+):
+
+    st.write(
+        selected_info["columns"]
+    )
+
+
+# ============================================================
+# 6. CSV 실제로 읽기
 # ============================================================
 
 try:
 
     df = pd.read_csv(
-        csv_path,
+        selected_file,
         encoding="utf-8-sig"
     )
 
@@ -115,7 +249,7 @@ except UnicodeDecodeError:
     try:
 
         df = pd.read_csv(
-            csv_path,
+            selected_file,
             encoding="cp949"
         )
 
@@ -136,10 +270,7 @@ except Exception as e:
     st.stop()
 
 
-# ============================================================
-# 4. 컬럼명 정리
-# ============================================================
-
+# 컬럼명 정리
 df.columns = (
     df.columns
     .astype(str)
@@ -153,42 +284,9 @@ st.write(
 )
 
 
-st.write(
-    "현재 CSV 컬럼:"
-)
-
-
-st.write(
-    df.columns.tolist()
-)
-
-
 # ============================================================
-# 5. 필수 컬럼 확인
+# 7. 필요한 컬럼 확인
 # ============================================================
-
-required_cols = [
-
-    "temp_avg",
-    "temp_max",
-    "temp_min",
-
-    "humidity",
-    "rainfall",
-    "wind_speed",
-
-    "solar_radiation",
-    "ground_temp",
-
-    "pm10",
-    "pm25",
-
-    "o3",
-    "no2",
-    "co",
-    "so2"
-]
-
 
 missing_cols = [
 
@@ -200,35 +298,41 @@ missing_cols = [
 ]
 
 
-# 필수 컬럼이 없는 경우
 if missing_cols:
 
     st.error(
-        "❌ 필요한 컬럼이 없습니다."
+        "❌ 필요한 기상 데이터 컬럼이 없습니다."
+    )
+
+
+    st.write(
+        "없는 컬럼:"
     )
 
     st.write(
-        "없는 컬럼:",
         missing_cols
     )
 
+
+    st.write(
+        "현재 CSV에 실제로 존재하는 컬럼:"
+    )
+
+    st.code(
+        "\n".join(df.columns.tolist())
+    )
+
+
     st.warning(
-        "현재 CSV의 컬럼명과 코드가 요구하는 컬럼명이 다릅니다."
+        "위의 CSV 선택 메뉴에서 다른 기상 데이터 CSV를 선택해보세요."
     )
 
-    st.write(
-        "코드가 요구하는 컬럼:"
-    )
-
-    st.write(
-        required_cols
-    )
 
     st.stop()
 
 
 # ============================================================
-# 6. 숫자형 변환
+# 8. 숫자형 변환
 # ============================================================
 
 st.header("2. 데이터 전처리")
@@ -250,10 +354,12 @@ df[required_cols] = (
 
 
 # ============================================================
-# 7. 파생변수 생성
+# 9. 파생변수 생성
 # ============================================================
 
-st.header("3. 환경 위험요인 계산")
+st.header(
+    "3. 환경 위험요인 계산"
+)
 
 
 # ------------------------------------------------------------
@@ -393,7 +499,6 @@ df["corrosion_risk"] = (
 )
 
 
-# 모든 결측값 0 처리
 df = df.fillna(0)
 
 
@@ -403,14 +508,15 @@ st.success(
 
 
 # ============================================================
-# 8. 재질 × 노출 조합
+# 10. 재질 × 노출 조합
 # ============================================================
 
-st.header("4. 문화재 재질 × 노출환경")
+st.header(
+    "4. 문화재 재질 × 노출환경"
+)
 
 
 materials = [
-
     "석조",
     "목조",
     "금속",
@@ -420,7 +526,6 @@ materials = [
 
 
 exposures = [
-
     "실외",
     "반실외",
     "실내"
@@ -441,7 +546,6 @@ comb = pd.DataFrame(
 )
 
 
-# Cartesian Product
 df["key"] = 1
 
 comb["key"] = 1
@@ -460,16 +564,18 @@ dataset = dataset.drop(
 
 
 st.write(
-    "재질 × 노출 조합 후 데이터:",
+    "재질 × 노출환경 적용 후 데이터 크기:",
     dataset.shape
 )
 
 
 # ============================================================
-# 9. 위험요인 정규화
+# 11. 위험요인 정규화
 # ============================================================
 
-st.header("5. 위험도 정규화")
+st.header(
+    "5. 위험도 정규화"
+)
 
 
 risk_cols = [
@@ -478,13 +584,10 @@ risk_cols = [
     "acid_risk",
     "rainfall_7d",
     "temp_range",
-
     "pm_load",
     "corrosion_risk",
-
     "mold_risk",
     "humidity_std3",
-
     "oxidation_risk",
     "high_humidity_risk"
 ]
@@ -500,38 +603,28 @@ for col in risk_cols:
     dataset[col + "_norm"] = (
 
         (
-
             dataset[col]
-
             - min_value
-
         )
 
         /
 
         (
-
             max_value
-
             - min_value
-
             + 1e-6
-
         )
 
     ) * 100
 
 
-st.success(
-    "정규화 완료!"
+# ============================================================
+# 12. 위험도 계산
+# ============================================================
+
+st.header(
+    "6. 문화재 위험도 계산"
 )
-
-
-# ============================================================
-# 10. 재질별 위험도 계산
-# ============================================================
-
-st.header("6. 문화재 위험도 계산")
 
 
 def calc_risk(row):
@@ -549,23 +642,17 @@ def calc_risk(row):
 
         risk = (
 
-            row["weathering_risk_norm"]
-            * 0.25
+            row["weathering_risk_norm"] * 0.25
 
-            + row["acid_risk_norm"]
-            * 0.20
+            + row["acid_risk_norm"] * 0.20
 
-            + row["rainfall_7d_norm"]
-            * 0.18
+            + row["rainfall_7d_norm"] * 0.18
 
-            + row["temp_range_norm"]
-            * 0.15
+            + row["temp_range_norm"] * 0.15
 
-            + row["pm_load_norm"]
-            * 0.12
+            + row["pm_load_norm"] * 0.12
 
-            + row["corrosion_risk_norm"]
-            * 0.10
+            + row["corrosion_risk_norm"] * 0.10
         )
 
 
@@ -577,23 +664,17 @@ def calc_risk(row):
 
         risk = (
 
-            row["mold_risk_norm"]
-            * 0.25
+            row["mold_risk_norm"] * 0.25
 
-            + row["humidity_std3_norm"]
-            * 0.20
+            + row["humidity_std3_norm"] * 0.20
 
-            + row["high_humidity_risk_norm"]
-            * 0.18
+            + row["high_humidity_risk_norm"] * 0.18
 
-            + row["rainfall_7d_norm"]
-            * 0.15
+            + row["rainfall_7d_norm"] * 0.15
 
-            + row["oxidation_risk_norm"]
-            * 0.12
+            + row["oxidation_risk_norm"] * 0.12
 
-            + row["pm_load_norm"]
-            * 0.10
+            + row["pm_load_norm"] * 0.10
         )
 
 
@@ -605,23 +686,17 @@ def calc_risk(row):
 
         risk = (
 
-            row["corrosion_risk_norm"]
-            * 0.30
+            row["corrosion_risk_norm"] * 0.30
 
-            + row["acid_risk_norm"]
-            * 0.22
+            + row["acid_risk_norm"] * 0.22
 
-            + row["high_humidity_risk_norm"]
-            * 0.18
+            + row["high_humidity_risk_norm"] * 0.18
 
-            + row["humidity_std3_norm"]
-            * 0.12
+            + row["humidity_std3_norm"] * 0.12
 
-            + row["pm_load_norm"]
-            * 0.10
+            + row["pm_load_norm"] * 0.10
 
-            + row["weathering_risk_norm"]
-            * 0.08
+            + row["weathering_risk_norm"] * 0.08
         )
 
 
@@ -633,23 +708,17 @@ def calc_risk(row):
 
         risk = (
 
-            row["oxidation_risk_norm"]
-            * 0.28
+            row["oxidation_risk_norm"] * 0.28
 
-            + row["pm_load_norm"]
-            * 0.20
+            + row["pm_load_norm"] * 0.20
 
-            + row["humidity_std3_norm"]
-            * 0.18
+            + row["humidity_std3_norm"] * 0.18
 
-            + row["high_humidity_risk_norm"]
-            * 0.14
+            + row["high_humidity_risk_norm"] * 0.14
 
-            + row["temp_range_norm"]
-            * 0.10
+            + row["temp_range_norm"] * 0.10
 
-            + row["weathering_risk_norm"]
-            * 0.10
+            + row["weathering_risk_norm"] * 0.10
         )
 
 
@@ -661,20 +730,15 @@ def calc_risk(row):
 
         risk = (
 
-            row["weathering_risk_norm"]
-            * 0.20
+            row["weathering_risk_norm"] * 0.20
 
-            + row["acid_risk_norm"]
-            * 0.20
+            + row["acid_risk_norm"] * 0.20
 
-            + row["oxidation_risk_norm"]
-            * 0.20
+            + row["oxidation_risk_norm"] * 0.20
 
-            + row["corrosion_risk_norm"]
-            * 0.20
+            + row["corrosion_risk_norm"] * 0.20
 
-            + row["pm_load_norm"]
-            * 0.20
+            + row["pm_load_norm"] * 0.20
         )
 
 
@@ -686,11 +750,9 @@ def calc_risk(row):
 
         risk *= 1.3
 
-
     elif exposure == "반실외":
 
         risk *= 1.1
-
 
     else:
 
@@ -712,7 +774,7 @@ dataset["material_risk"] = (
 
 
 # ============================================================
-# 11. 위험도 라벨
+# 13. 위험도 라벨
 # ============================================================
 
 def make_label(value):
@@ -737,11 +799,11 @@ dataset["target"] = (
 
 
 # ============================================================
-# 12. 위험도 분포
+# 14. 위험도 분포
 # ============================================================
 
-st.subheader(
-    "문화재 위험도 분포"
+st.header(
+    "7. 문화재 위험도 분포"
 )
 
 
@@ -752,8 +814,8 @@ risk_distribution = (
 
 
 st.dataframe(
-    risk_distribution
-    .rename("개수")
+    risk_distribution.rename("개수"),
+    use_container_width=True
 )
 
 
@@ -763,10 +825,12 @@ st.bar_chart(
 
 
 # ============================================================
-# 13. 머신러닝 데이터 구성
+# 15. 머신러닝 데이터 구성
 # ============================================================
 
-st.header("7. 머신러닝 분석")
+st.header(
+    "8. 머신러닝 분석"
+)
 
 
 feature_columns = [
@@ -818,11 +882,9 @@ y = dataset[
 ].copy()
 
 
-# 범주형 변수 One-Hot Encoding
+# 범주형 변수 처리
 X = pd.get_dummies(
-
     X,
-
     columns=[
         "material",
         "exposure"
@@ -834,7 +896,7 @@ X = X.fillna(0)
 
 
 # ============================================================
-# 14. 클래스 확인
+# 16. 클래스 확인
 # ============================================================
 
 class_count = (
@@ -848,8 +910,8 @@ st.subheader(
 
 
 st.dataframe(
-    class_count
-    .rename("개수")
+    class_count.rename("개수"),
+    use_container_width=True
 )
 
 
@@ -863,8 +925,18 @@ if y.nunique() < 2:
 
 
 # ============================================================
-# 15. Train / Test Split
+# 17. 데이터 분할
 # ============================================================
+
+# 각 클래스가 최소 2개 이상 있는지 확인
+if class_count.min() < 2:
+
+    st.error(
+        "각 위험도 클래스의 데이터가 최소 2개 이상 필요합니다."
+    )
+
+    st.stop()
+
 
 X_train, X_test, y_train, y_test = (
 
@@ -883,7 +955,7 @@ X_train, X_test, y_train, y_test = (
 
 
 # ============================================================
-# 16. 모델 정의
+# 18. 모델 정의
 # ============================================================
 
 models = {
@@ -913,7 +985,6 @@ models = {
 }
 
 
-# Logistic Regression
 lr_model = LogisticRegression(
 
     max_iter=2000,
@@ -926,7 +997,7 @@ trained_models = {}
 
 
 # ============================================================
-# 17. Random Forest / Gradient Boosting 학습
+# 19. RandomForest / GradientBoosting
 # ============================================================
 
 for name, model in models.items():
@@ -945,7 +1016,7 @@ for name, model in models.items():
 
 
 # ============================================================
-# 18. Logistic Regression 학습
+# 20. Logistic Regression
 # ============================================================
 
 with st.spinner(
@@ -984,10 +1055,12 @@ trained_models[
 
 
 # ============================================================
-# 19. 모델 평가
+# 21. 모델 평가
 # ============================================================
 
-st.header("8. 모델 성능 비교")
+st.header(
+    "9. 모델 성능 비교"
+)
 
 
 results = {}
@@ -1007,7 +1080,6 @@ for name, model in trained_models.items():
                 X_test_scaled
             )
         )
-
 
     else:
 
@@ -1037,7 +1109,7 @@ for name, model in trained_models.items():
 
 
 # ============================================================
-# 20. 성능표
+# 22. 결과표
 # ============================================================
 
 result_df = pd.DataFrame({
@@ -1066,7 +1138,7 @@ st.dataframe(
 
 
 # ============================================================
-# 21. 최고 모델
+# 23. 최고 모델
 # ============================================================
 
 best_model_name = max(
@@ -1083,13 +1155,13 @@ best_accuracy = results[
 st.success(
 
     f"🏆 최고 성능 모델: "
-    f"{best_model_name}  |  "
+    f"{best_model_name} | "
     f"정확도: {best_accuracy:.4f}"
 )
 
 
 # ============================================================
-# 22. Classification Report
+# 24. 상세 평가
 # ============================================================
 
 st.subheader(
@@ -1109,11 +1181,11 @@ for name in results.keys():
 
 
 # ============================================================
-# 23. 최고 모델 변수 중요도
+# 25. 환경요인 중요도
 # ============================================================
 
 st.header(
-    "9. 환경요인 중요도"
+    "10. 환경요인 중요도"
 )
 
 
@@ -1135,7 +1207,6 @@ if best_model_name == "LogisticRegression":
 
         axis=0
     )
-
 
 else:
 
@@ -1159,7 +1230,9 @@ importance_df = pd.DataFrame({
 importance_df = (
     importance_df[
         ~importance_df["Feature"]
-        .str.startswith("material_")
+        .str.startswith(
+            "material_"
+        )
     ]
 )
 
@@ -1167,7 +1240,9 @@ importance_df = (
 importance_df = (
     importance_df[
         ~importance_df["Feature"]
-        .str.startswith("exposure_")
+        .str.startswith(
+            "exposure_"
+        )
     ]
 )
 
@@ -1187,15 +1262,13 @@ st.subheader(
 
 
 st.dataframe(
-
     importance_df.head(10),
-
     use_container_width=True
 )
 
 
 # ============================================================
-# 24. 중요도 그래프
+# 26. 중요도 그래프
 # ============================================================
 
 top10 = (
@@ -1236,12 +1309,15 @@ plt.tight_layout()
 st.pyplot(fig)
 
 
+plt.close(fig)
+
+
 # ============================================================
-# 25. 재질별 환경요인 중요도
+# 27. 재질별 환경요인 중요도
 # ============================================================
 
 st.header(
-    "10. 재질별 환경요인 중요도"
+    "11. 재질별 환경요인 중요도"
 )
 
 
@@ -1303,7 +1379,6 @@ for material in materials_analysis:
     ].copy()
 
 
-    # 데이터 부족
     if len(sub_df) < 30:
 
         st.warning(
@@ -1328,20 +1403,15 @@ for material in materials_analysis:
     )
 
 
-    # 클래스 하나만 존재
     if y_sub.nunique() < 2:
 
         st.warning(
-
-            f"{material}: "
-            "위험도 클래스가 하나뿐이라 "
-            "분석할 수 없습니다."
+            f"{material}: 위험도 클래스가 하나뿐이라 분석할 수 없습니다."
         )
 
         continue
 
 
-    # 재질별 Random Forest
     material_model = (
         RandomForestClassifier(
 
@@ -1362,7 +1432,6 @@ for material in materials_analysis:
     )
 
 
-    # 중요도
     material_importance = pd.DataFrame({
 
         "Feature":
@@ -1387,7 +1456,6 @@ for material in materials_analysis:
     )
 
 
-    # TOP 10
     st.write(
         "위험요인 TOP 10"
     )
@@ -1401,10 +1469,7 @@ for material in materials_analysis:
     )
 
 
-    # --------------------------------------------------------
     # 그래프
-    # --------------------------------------------------------
-
     top10_material = (
 
         material_importance
@@ -1438,8 +1503,7 @@ for material in materials_analysis:
 
     ax.set_title(
 
-        f"{material} 문화재 "
-        "위험요인 TOP 10"
+        f"{material} 문화재 위험요인 TOP 10"
     )
 
 
@@ -1449,12 +1513,15 @@ for material in materials_analysis:
     st.pyplot(fig)
 
 
+    plt.close(fig)
+
+
 # ============================================================
-# 26. 최종 데이터 확인
+# 28. 최종 데이터 확인
 # ============================================================
 
 st.header(
-    "11. 분석 데이터"
+    "12. 분석 데이터"
 )
 
 
@@ -1469,9 +1536,7 @@ with st.expander(
 
 
     st.dataframe(
-
         dataset.head(100),
-
         use_container_width=True
     )
 
@@ -1481,5 +1546,5 @@ with st.expander(
 # ============================================================
 
 st.success(
-    "🎉 문화재 환경 위험도 분석이 완료되었습니다!"
+    "🎉 모든 문화재 환경 위험도 분석이 완료되었습니다!"
 )
