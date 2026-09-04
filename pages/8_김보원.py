@@ -8,7 +8,7 @@ import os
 def load_data():
     # 파일 후보 경로 목록 (여러 가능성 대비)
     possible_paths = [
-        "영천_국가유산_상세_좌표보완.csv",
+        "pages/영천_국가유산_상세_좌표보완.csv",
         "영천_국가유산_상세.csv",
         "data/영천_국가유산_상세_좌표보완.csv",
         "data/영천_국가유산_상세.csv",
