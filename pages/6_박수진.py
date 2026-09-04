@@ -1,7 +1,9 @@
 import os
+import time
 import pandas as pd
 import requests
 import streamlit as st
+
 
 # ==========================================================
 # 1. 페이지 설정
@@ -17,17 +19,19 @@ st.title("📍 영천 국가유산 지도")
 # ==========================================================
 # 2. 카카오 REST API 키
 # ==========================================================
-# .streamlit/secrets.toml에 저장하는 것을 권장
+# .streamlit/secrets.toml
 #
-# KAKAO_API_KEY = "발급받은 REST API 키"
+# KAKAO_API_KEY = "카카오 REST API 키"
 #
 KAKAO_API_KEY = st.secrets.get("KAKAO_API_KEY", "")
 
 
 # ==========================================================
-# 3. 지역별 보정 좌표
+# 3. 기존 보정용 좌표
 # ==========================================================
 LOCATION_COORDS = {
+
+    # 주요 사찰 / 문화유산
     "은해사": (35.9918, 128.7897),
     "수도사": (35.9863, 128.9806),
     "거조사": (36.0336, 128.7825),
@@ -35,6 +39,7 @@ LOCATION_COORDS = {
     "임고서원": (35.9907, 128.9475),
     "인종대왕": (35.9757, 128.8922),
 
+    # 읍 / 면
     "청통면": (35.9836, 128.8351),
     "신령면": (36.0392, 128.7958),
     "화산면": (36.0247, 128.9221),
@@ -45,9 +50,9 @@ LOCATION_COORDS = {
     "고경면": (35.9619, 129.0478),
     "북안면": (35.8894, 128.9958),
     "대창면": (35.8647, 128.8953),
-
     "금호읍": (35.9189, 128.8586),
 
+    # 동
     "동부동": (35.9767, 128.9567),
     "중앙동": (35.9686, 128.9372),
     "서부동": (35.9653, 128.9231),
@@ -70,7 +75,6 @@ def valid_coordinate(lat, lon):
     except:
         return False
 
-    # 대한민국 대략적인 범위
     return (
         33 <= lat <= 39
         and
@@ -79,7 +83,7 @@ def valid_coordinate(lat, lon):
 
 
 # ==========================================================
-# 5. 카카오 주소 검색 API
+# 5. 카카오 주소 검색
 # ==========================================================
 @st.cache_data(show_spinner=False)
 def kakao_address_search(address):
@@ -90,7 +94,10 @@ def kakao_address_search(address):
     if not address:
         return None, None, "주소 없음"
 
-    url = "https://dapi.kakao.com/v2/local/search/address.json"
+    url = (
+        "https://dapi.kakao.com/"
+        "v2/local/search/address.json"
+    )
 
     headers = {
         "Authorization": f"KakaoAK {KAKAO_API_KEY}"
@@ -110,29 +117,37 @@ def kakao_address_search(address):
         )
 
         if response.status_code != 200:
+
             return (
                 None,
                 None,
-                f"카카오 API 오류: {response.status_code}"
+                f"카카오 주소 API 오류 {response.status_code}"
             )
 
         data = response.json()
 
-        documents = data.get("documents", [])
+        documents = data.get(
+            "documents",
+            []
+        )
 
         if not documents:
-            return None, None, "카카오 주소 검색 결과 없음"
 
-        # 첫 번째 검색 결과 사용
-        document = documents[0]
+            return (
+                None,
+                None,
+                "카카오 주소 검색 결과 없음"
+            )
 
-        longitude = float(document["x"])
-        latitude = float(document["y"])
+        doc = documents[0]
+
+        lat = float(doc["y"])
+        lon = float(doc["x"])
 
         return (
-            latitude,
-            longitude,
-            "카카오 주소 검색 성공"
+            lat,
+            lon,
+            "① 카카오 주소 검색"
         )
 
     except Exception as e:
@@ -140,12 +155,131 @@ def kakao_address_search(address):
         return (
             None,
             None,
-            f"카카오 API 오류: {str(e)}"
+            f"카카오 주소 검색 오류: {e}"
         )
 
 
 # ==========================================================
-# 6. 주소 fallback 검색
+# 6. 카카오 키워드 검색
+# ==========================================================
+@st.cache_data(show_spinner=False)
+def kakao_keyword_search(name):
+
+    if not KAKAO_API_KEY:
+        return None, None, "카카오 API 키 없음"
+
+    if not name:
+        return None, None, "문화재명 없음"
+
+    url = (
+        "https://dapi.kakao.com/"
+        "v2/local/search/keyword.json"
+    )
+
+    headers = {
+        "Authorization": f"KakaoAK {KAKAO_API_KEY}"
+    }
+
+    # 영천시 범위로 검색
+    query = f"영천시 {name}"
+
+    params = {
+        "query": query,
+        "size": 15
+    }
+
+    try:
+
+        response = requests.get(
+            url,
+            headers=headers,
+            params=params,
+            timeout=5
+        )
+
+        if response.status_code != 200:
+
+            return (
+                None,
+                None,
+                f"카카오 키워드 API 오류 {response.status_code}"
+            )
+
+        data = response.json()
+
+        documents = data.get(
+            "documents",
+            []
+        )
+
+        if not documents:
+
+            return (
+                None,
+                None,
+                "카카오 키워드 검색 결과 없음"
+            )
+
+        # --------------------------------------------------
+        # 영천시 결과 우선
+        # --------------------------------------------------
+        for doc in documents:
+
+            address_name = str(
+                doc.get("address_name", "")
+            )
+
+            road_address = str(
+                doc.get("road_address_name", "")
+            )
+
+            place_name = str(
+                doc.get("place_name", "")
+            )
+
+            combined = (
+                address_name
+                + " "
+                + road_address
+                + " "
+                + place_name
+            )
+
+            if "영천" in combined:
+
+                lat = float(doc["y"])
+                lon = float(doc["x"])
+
+                return (
+                    lat,
+                    lon,
+                    f"② 카카오 키워드 검색: {place_name}"
+                )
+
+        # 영천 결과가 없어도 첫 번째 결과 사용
+        doc = documents[0]
+
+        lat = float(doc["y"])
+        lon = float(doc["x"])
+
+        return (
+            lat,
+            lon,
+            f"② 카카오 키워드 검색: "
+            f"{doc.get('place_name', '')}"
+        )
+
+    except Exception as e:
+
+        return (
+            None,
+            None,
+            f"카카오 키워드 검색 오류: {e}"
+        )
+
+
+# ==========================================================
+# 7. 기존 주소 좌표 검색
 # ==========================================================
 def find_by_address(address):
 
@@ -154,7 +288,7 @@ def find_by_address(address):
     if not address:
         return None, None
 
-    # 긴 키워드부터 검사
+    # 긴 키워드부터
     for key in sorted(
         LOCATION_COORDS.keys(),
         key=len,
@@ -167,14 +301,14 @@ def find_by_address(address):
 
             return (
                 (lat, lon),
-                f"주소 fallback: {key}"
+                f"③ 기존 주소 좌표: {key}"
             )
 
     return None, None
 
 
 # ==========================================================
-# 7. 문화재명 fallback 검색
+# 8. 기존 문화재명 좌표 검색
 # ==========================================================
 def find_by_name(name):
 
@@ -195,24 +329,30 @@ def find_by_name(name):
 
             return (
                 (lat, lon),
-                f"문화재명 fallback: {key}"
+                f"④ 기존 문화재명 좌표: {key}"
             )
 
     return None, None
 
 
 # ==========================================================
-# 8. CSV 로드 + 좌표 자동 보정
+# 9. CSV 로드
 # ==========================================================
 @st.cache_data
-def load_and_fix_data():
+def load_data():
 
-    file_path = "pages/영천_국가유산_상세.csv"
+    file_path = (
+        "pages/영천_국가유산_상세.csv"
+    )
 
     if not os.path.exists(file_path):
-        file_path = "영천_국가유산_상세.csv"
+
+        file_path = (
+            "영천_국가유산_상세.csv"
+        )
 
     if not os.path.exists(file_path):
+
         return None
 
     df = pd.read_csv(
@@ -221,12 +361,12 @@ def load_and_fix_data():
     )
 
     # ------------------------------------------------------
-    # 필요한 컬럼 확인
+    # 컬럼 생성
     # ------------------------------------------------------
     if "문화재명(국문)" not in df.columns:
 
         st.error(
-            "❌ CSV에 '문화재명(국문)' 컬럼이 없습니다."
+            "❌ '문화재명(국문)' 컬럼이 없습니다."
         )
 
         st.stop()
@@ -240,7 +380,6 @@ def load_and_fix_data():
     if "경도" not in df.columns:
         df["경도"] = None
 
-    # 숫자 변환
     df["위도"] = pd.to_numeric(
         df["위도"],
         errors="coerce"
@@ -251,13 +390,37 @@ def load_and_fix_data():
         errors="coerce"
     )
 
-    # 보정 방법 기록
     df["좌표보정방법"] = ""
 
-    # ======================================================
-    # 좌표 보정
-    # ======================================================
-    for i in df.index:
+    return df
+
+
+# ==========================================================
+# 10. 좌표 자동 보정
+# ==========================================================
+def fix_coordinates(df):
+
+    total = len(df)
+
+    progress = st.progress(0)
+
+    status = st.empty()
+
+    for number, i in enumerate(df.index):
+
+        # --------------------------------------------------
+        # 이미 좌표가 있는 경우
+        # --------------------------------------------------
+        if valid_coordinate(
+            df.at[i, "위도"],
+            df.at[i, "경도"]
+        ):
+
+            df.at[i, "좌표보정방법"] = (
+                "기존 CSV 좌표"
+            )
+
+            continue
 
         name = str(
             df.at[i, "문화재명(국문)"]
@@ -267,41 +430,44 @@ def load_and_fix_data():
             df.at[i, "소재지상세"]
         ).strip()
 
-        # --------------------------------------------------
-        # 0순위
-        # 기존 CSV 좌표가 정상이라면 그대로 사용
-        # --------------------------------------------------
-        if valid_coordinate(
-            df.at[i, "위도"],
-            df.at[i, "경도"]
-        ):
-
-            df.at[i, "좌표보정방법"] = "기존 CSV 좌표"
-
-            continue
-
 
         # ==================================================
-        # 1순위 ★ 카카오 API
+        # ① 카카오 주소 검색
         # ==================================================
-        lat, lon, message = kakao_address_search(
-            address
+        lat, lon, method = (
+            kakao_address_search(address)
         )
 
-        if lat is not None and lon is not None:
+        if lat is not None:
 
             df.at[i, "위도"] = lat
             df.at[i, "경도"] = lon
-            df.at[i, "좌표보정방법"] = message
+            df.at[i, "좌표보정방법"] = method
 
             continue
 
 
         # ==================================================
-        # 2순위 ★ 주소 fallback
+        # ② 카카오 문화재명 키워드 검색
         # ==================================================
-        result, method = find_by_address(
-            address
+        lat, lon, method = (
+            kakao_keyword_search(name)
+        )
+
+        if lat is not None:
+
+            df.at[i, "위도"] = lat
+            df.at[i, "경도"] = lon
+            df.at[i, "좌표보정방법"] = method
+
+            continue
+
+
+        # ==================================================
+        # ③ 기존 주소 좌표
+        # ==================================================
+        result, method = (
+            find_by_address(address)
         )
 
         if result:
@@ -314,10 +480,10 @@ def load_and_fix_data():
 
 
         # ==================================================
-        # 3순위 ★ 문화재명 fallback
+        # ④ 기존 문화재명 좌표
         # ==================================================
-        result, method = find_by_name(
-            name
+        result, method = (
+            find_by_name(name)
         )
 
         if result:
@@ -330,19 +496,34 @@ def load_and_fix_data():
 
 
         # ==================================================
-        # 최종 실패
+        # ⑤ 최종 실패
         # ==================================================
         df.at[i, "좌표보정방법"] = (
             "❌ 좌표 확인 실패"
         )
 
+        progress.progress(
+            (number + 1) / total
+        )
+
+        status.write(
+            f"좌표 확인 중... "
+            f"{number + 1}/{total}"
+        )
+
+        # API 과도한 호출 방지
+        time.sleep(0.05)
+
+    progress.empty()
+    status.empty()
+
     return df
 
 
 # ==========================================================
-# 9. 데이터 불러오기
+# 11. 데이터 불러오기
 # ==========================================================
-df = load_and_fix_data()
+df = load_data()
 
 if df is None:
 
@@ -354,7 +535,31 @@ if df is None:
 
 
 # ==========================================================
-# 10. 지도 데이터
+# 12. 좌표 보정 실행
+# ==========================================================
+if st.button(
+    "🔄 누락 좌표 자동 보완",
+    type="primary"
+):
+
+    # 캐시된 함수 결과를 초기화
+    kakao_address_search.clear()
+    kakao_keyword_search.clear()
+
+    df = fix_coordinates(df)
+
+    # 세션에 저장
+    st.session_state["fixed_df"] = df
+
+
+# 보정된 데이터가 있으면 사용
+if "fixed_df" in st.session_state:
+
+    df = st.session_state["fixed_df"]
+
+
+# ==========================================================
+# 13. 지도용 데이터
 # ==========================================================
 df["latitude"] = pd.to_numeric(
     df["위도"],
@@ -378,7 +583,7 @@ map_data = df[
 
 
 # ==========================================================
-# 11. 누락 좌표
+# 14. 누락 좌표
 # ==========================================================
 missing_data = df[
     df["latitude"].isna()
@@ -392,20 +597,41 @@ missing_data = df[
 
 
 # ==========================================================
-# 12. 결과 표시
+# 15. 결과 표시
 # ==========================================================
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.metric(
+        "전체 국가유산",
+        len(df)
+    )
+
+with col2:
+    st.metric(
+        "지도 표시",
+        len(map_data)
+    )
+
+with col3:
+    st.metric(
+        "좌표 미확인",
+        len(missing_data)
+    )
+
+
 if len(missing_data) > 0:
 
     st.warning(
-        f"⚠️ 아직 좌표를 찾지 못한 문화재가 "
-        f"{len(missing_data)}건 있습니다."
+        f"⚠️ 아직 {len(missing_data)}건의 "
+        "좌표를 찾지 못했습니다."
     )
 
     st.subheader(
         "🔎 좌표 확인이 필요한 문화재"
     )
 
-    show_columns = [
+    columns = [
         "문화재명(국문)",
         "소재지상세",
         "위도",
@@ -413,37 +639,48 @@ if len(missing_data) > 0:
         "좌표보정방법"
     ]
 
-    show_columns = [
-        c for c in show_columns
+    columns = [
+        c for c in columns
         if c in missing_data.columns
     ]
 
     st.dataframe(
-        missing_data[show_columns],
+        missing_data[columns],
         use_container_width=True
     )
 
 else:
 
     st.success(
-        f"🎉 총 {len(df)}건의 모든 문화재 좌표가 정상적으로 확보되었습니다!"
+        f"🎉 총 {len(df)}건의 모든 "
+        "국가유산 좌표가 확보되었습니다!"
     )
 
 
 # ==========================================================
-# 13. 지도
+# 16. 지도
 # ==========================================================
-st.subheader("🗺️ 국가유산 위치")
-
-st.map(
-    map_data[
-        ["latitude", "longitude"]
-    ]
+st.subheader(
+    "🗺️ 국가유산 위치"
 )
 
+if len(map_data) > 0:
+
+    st.map(
+        map_data[
+            ["latitude", "longitude"]
+        ]
+    )
+
+else:
+
+    st.info(
+        "표시할 좌표가 없습니다."
+    )
+
 
 # ==========================================================
-# 14. 전체 목록
+# 17. 전체 목록
 # ==========================================================
 st.subheader(
     "📋 전체 국가유산 목록"
