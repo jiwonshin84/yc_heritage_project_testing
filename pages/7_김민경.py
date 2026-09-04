@@ -1,18 +1,13 @@
 # =====================================================
-# Google Drive 마운트
-# =====================================================
-
-from google.colab import drive
-
-drive.mount('/content/drive')
-
-# =====================================================
 # 라이브러리
 # =====================================================
 
 import pandas as pd
 import re
 from datetime import datetime
+from pathlib import Path
+import streamlit as st
+
 
 # =====================================================
 # 현재 연도
@@ -20,65 +15,94 @@ from datetime import datetime
 
 CURRENT_YEAR = datetime.now().year
 
+
 # =====================================================
 # 1. 원본 문화재 상세 데이터 불러오기
 # =====================================================
+# Streamlit Cloud에서는 Google Drive 대신
+# GitHub 프로젝트 내부의 dataset 폴더를 사용합니다.
 
-heritage_df = pd.read_csv(
+BASE_DIR = Path(__file__).resolve().parent.parent
 
-    "/content/drive/MyDrive/"
-    "00. 2026학년도 인재양성프로젝트/"
-    "공공데이터 기반 프로젝트/"
-    "dataset/영천_국가유산_상세_좌표보완.csv"
-
+DATA_PATH = (
+    BASE_DIR
+    / "dataset"
+    / "영천_국가유산_상세_좌표보완.csv"
 )
+
+OUTPUT_PATH = (
+    BASE_DIR
+    / "dataset"
+    / "영천_문화재_특성데이터셋.csv"
+)
+
+
+# 파일 존재 여부 확인
+if not DATA_PATH.exists():
+
+    st.error(
+        f"원본 데이터 파일을 찾을 수 없습니다.\n\n"
+        f"파일 위치: {DATA_PATH}"
+    )
+
+    st.stop()
+
+
+# CSV 불러오기
+heritage_df = pd.read_csv(
+    DATA_PATH,
+    encoding="utf-8-sig"
+)
+
 
 # =====================================================
 # 컬럼 공백 제거
 # =====================================================
 
 heritage_df.columns = (
-    heritage_df.columns.str.strip()
+    heritage_df.columns
+    .str.strip()
 )
+
 
 # =====================================================
 # 2. 위험 분석 핵심 컬럼만 추출
 # =====================================================
 
-feature_df = heritage_df[[
-
-    # -----------------------------
-    # 기본키
-    # -----------------------------
+required_columns = [
 
     "국가유산연계번호",
-
-    # -----------------------------
-    # 문화재명
-    # -----------------------------
-
     "문화재명(국문)",
-
-    # -----------------------------
-    # 문화재 종목
-    # -----------------------------
-
     "국가유산종목",
-
-    # -----------------------------
-    # 시대
-    # -----------------------------
-
     "시대",
-
-    # -----------------------------
-    # 위치정보
-    # -----------------------------
-
     "위도",
     "경도"
 
-]].copy()
+]
+
+
+# 필요한 컬럼 존재 여부 확인
+missing_columns = [
+    col
+    for col in required_columns
+    if col not in heritage_df.columns
+]
+
+
+if missing_columns:
+
+    st.error(
+        "다음 필수 컬럼이 원본 데이터에 없습니다:\n\n"
+        + "\n".join(missing_columns)
+    )
+
+    st.stop()
+
+
+feature_df = heritage_df[
+    required_columns
+].copy()
+
 
 # =====================================================
 # 3. 시대 그룹화 함수
@@ -103,8 +127,8 @@ def simplify_era(text):
     # -------------------------------------------------
 
     elif (
-        "통일신라" in text or
-        "신라시대 후기" in text
+        "통일신라" in text
+        or "신라시대 후기" in text
     ):
         return "통일신라"
 
@@ -116,14 +140,14 @@ def simplify_era(text):
     # -------------------------------------------------
 
     elif (
-        "고려시대 초기" in text or
-        "고려 초기" in text
+        "고려시대 초기" in text
+        or "고려 초기" in text
     ):
         return "고려초기"
 
     elif (
-        "고려시대 말기" in text or
-        "고려 말기" in text
+        "고려시대 말기" in text
+        or "고려 말기" in text
     ):
         return "고려후기"
 
@@ -135,13 +159,13 @@ def simplify_era(text):
     # -------------------------------------------------
 
     elif (
-        "세종" in text or
-        "태조" in text or
-        "태종" in text or
-        "세조" in text or
-        "성종" in text or
-        "중종" in text or
-        "인종" in text
+        "세종" in text
+        or "태조" in text
+        or "태종" in text
+        or "세조" in text
+        or "성종" in text
+        or "중종" in text
+        or "인종" in text
     ):
         return "조선초기"
 
@@ -150,13 +174,13 @@ def simplify_era(text):
     # -------------------------------------------------
 
     elif (
-        "숙종" in text or
-        "영조" in text or
-        "정조" in text or
-        "순조" in text or
-        "철종" in text or
-        "고종" in text or
-        "광해군" in text
+        "숙종" in text
+        or "영조" in text
+        or "정조" in text
+        or "순조" in text
+        or "철종" in text
+        or "고종" in text
+        or "광해군" in text
     ):
         return "조선후기"
 
@@ -165,8 +189,8 @@ def simplify_era(text):
     # -------------------------------------------------
 
     elif (
-        "조선시대 후기" in text or
-        "조선 후기" in text
+        "조선시대 후기" in text
+        or "조선 후기" in text
     ):
         return "조선후기"
 
@@ -209,6 +233,7 @@ def simplify_era(text):
 
     return "기타"
 
+
 # =====================================================
 # 4. 시대그룹 컬럼 생성
 # =====================================================
@@ -217,6 +242,7 @@ feature_df["시대그룹"] = (
     feature_df["시대"]
     .apply(simplify_era)
 )
+
 
 # =====================================================
 # 5. 시대별 추정 제작연도 매핑
@@ -243,6 +269,7 @@ era_year_map = {
 
 }
 
+
 # =====================================================
 # 6. 추정 제작연도 생성
 # =====================================================
@@ -252,16 +279,16 @@ feature_df["추정제작연도"] = (
     .map(era_year_map)
 )
 
+
 # =====================================================
 # 7. 문화재 연령 계산
 # =====================================================
 
 feature_df["문화재연령"] = (
-
     CURRENT_YEAR
     - feature_df["추정제작연도"]
-
 )
+
 
 # =====================================================
 # 8. 재질 / 노출형태 기본값
@@ -270,13 +297,10 @@ feature_df["문화재연령"] = (
 feature_df["재질"] = "기타"
 feature_df["노출형태"] = "반실외"
 
+
 # =====================================================
 # 9. 재질 분류 키워드
 # =====================================================
-
-# -----------------------------
-# 석조
-# -----------------------------
 
 stone_keywords = [
 
@@ -291,9 +315,6 @@ stone_keywords = [
 
 ]
 
-# -----------------------------
-# 목조
-# -----------------------------
 
 wood_keywords = [
 
@@ -312,9 +333,6 @@ wood_keywords = [
 
 ]
 
-# -----------------------------
-# 금속
-# -----------------------------
 
 metal_keywords = [
 
@@ -326,9 +344,6 @@ metal_keywords = [
 
 ]
 
-# -----------------------------
-# 회화
-# -----------------------------
 
 painting_keywords = [
 
@@ -341,6 +356,7 @@ painting_keywords = [
 
 ]
 
+
 # =====================================================
 # 10. 재질 자동 분류
 # =====================================================
@@ -351,10 +367,7 @@ for idx, row in feature_df.iterrows():
         row["문화재명(국문)"]
     )
 
-    # -----------------------------
     # 석조
-    # -----------------------------
-
     if any(
         keyword in name
         for keyword in stone_keywords
@@ -362,10 +375,7 @@ for idx, row in feature_df.iterrows():
 
         feature_df.loc[idx, "재질"] = "석조"
 
-    # -----------------------------
     # 목조
-    # -----------------------------
-
     elif any(
         keyword in name
         for keyword in wood_keywords
@@ -373,10 +383,7 @@ for idx, row in feature_df.iterrows():
 
         feature_df.loc[idx, "재질"] = "목조"
 
-    # -----------------------------
     # 금속
-    # -----------------------------
-
     elif any(
         keyword in name
         for keyword in metal_keywords
@@ -384,10 +391,7 @@ for idx, row in feature_df.iterrows():
 
         feature_df.loc[idx, "재질"] = "금속"
 
-    # -----------------------------
     # 회화
-    # -----------------------------
-
     elif any(
         keyword in name
         for keyword in painting_keywords
@@ -395,13 +399,10 @@ for idx, row in feature_df.iterrows():
 
         feature_df.loc[idx, "재질"] = "회화"
 
+
 # =====================================================
 # 11. 노출형태 키워드
 # =====================================================
-
-# -----------------------------
-# 실내
-# -----------------------------
 
 indoor_keywords = [
 
@@ -415,9 +416,6 @@ indoor_keywords = [
 
 ]
 
-# -----------------------------
-# 실외
-# -----------------------------
 
 outdoor_keywords = [
 
@@ -429,6 +427,7 @@ outdoor_keywords = [
 
 ]
 
+
 # =====================================================
 # 12. 노출형태 자동 분류
 # =====================================================
@@ -439,10 +438,7 @@ for idx, row in feature_df.iterrows():
         row["문화재명(국문)"]
     )
 
-    # -----------------------------
     # 실내
-    # -----------------------------
-
     if any(
         keyword in name
         for keyword in indoor_keywords
@@ -450,10 +446,7 @@ for idx, row in feature_df.iterrows():
 
         feature_df.loc[idx, "노출형태"] = "실내"
 
-    # -----------------------------
     # 실외
-    # -----------------------------
-
     elif any(
         keyword in name
         for keyword in outdoor_keywords
@@ -461,13 +454,11 @@ for idx, row in feature_df.iterrows():
 
         feature_df.loc[idx, "노출형태"] = "실외"
 
-    # -----------------------------
     # 나머지
-    # -----------------------------
-
     else:
 
         feature_df.loc[idx, "노출형태"] = "반실외"
+
 
 # =====================================================
 # 13. 최종 컬럼 순서 정리
@@ -491,44 +482,57 @@ feature_df = feature_df[[
 
 ]]
 
+
 # =====================================================
 # 14. 결과 확인
 # =====================================================
 
-print(feature_df.head())
+st.subheader("문화재 특성 데이터셋")
 
-print("\n============================")
-print("재질 분포")
-print("============================")
+st.dataframe(
+    feature_df,
+    use_container_width=True
+)
 
-print(
+
+# =====================================================
+# 15. 통계
+# =====================================================
+
+st.subheader("재질 분포")
+
+st.write(
     feature_df["재질"]
     .value_counts()
 )
 
-print("\n============================")
-print("노출형태 분포")
-print("============================")
 
-print(
+st.subheader("노출형태 분포")
+
+st.write(
     feature_df["노출형태"]
     .value_counts()
 )
 
+
 # =====================================================
-# 15. 저장
+# 16. CSV 다운로드
 # =====================================================
 
-feature_df.to_csv(
-
-    "/content/drive/MyDrive/"
-    "00. 2026학년도 인재양성프로젝트/"
-    "공공데이터 기반 프로젝트/"
-    "dataset/영천_문화재_특성데이터셋.csv",
-
+csv_data = feature_df.to_csv(
     index=False,
     encoding="utf-8-sig"
-
 )
 
-print("\n✅ 문화재 특성 데이터셋 저장 완료")
+
+st.download_button(
+
+    label="📥 문화재 특성 데이터셋 다운로드",
+
+    data=csv_data,
+
+    file_name="영천_문화재_특성데이터셋.csv",
+
+    mime="text/csv"
+
+)
