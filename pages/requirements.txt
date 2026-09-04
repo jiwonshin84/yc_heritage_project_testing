@@ -1,11 +1,2 @@
 requests
 pandas
-
-numpy
-requests
-matplotlib
-seaborn
-folium
-streamlit-folium
-scikit-learn
-lxml
