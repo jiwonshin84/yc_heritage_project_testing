@@ -28,8 +28,17 @@ st.caption(
 # 1. Kakao API 설정
 # =========================================================
 
-KAKAO_API_KEY = st.secrets.get("KAKAO_API_KEY", "")
+# Kakao API 키 불러오기
+KAKAO_API_KEY = ""
 
+try:
+    with open("secrets.toml", "r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip().startswith("KAKAO_API_KEY"):
+                KAKAO_API_KEY = line.split("=", 1)[1].strip().strip('"').strip("'")
+                break
+except Exception:
+    pass
 HEADERS = {
     "Authorization": f"KakaoAK {KAKAO_API_KEY}"
 }
