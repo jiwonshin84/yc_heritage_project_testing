@@ -1,4 +1,3 @@
-```python
 import os
 import re
 import time
@@ -1380,4 +1379,3 @@ st.download_button(
     mime="text/csv",
     use_container_width=True
 )
-```
