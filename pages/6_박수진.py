@@ -1,3 +1,4 @@
+```python
 import os
 import re
 import time
@@ -6,118 +7,160 @@ import requests
 import streamlit as st
 
 
-# ==========================================================
-# 1. 페이지 설정
-# ==========================================================
+# =========================================================
+# 0. 기본 설정
+# =========================================================
 
 st.set_page_config(
     page_title="영천 국가유산 좌표 보완",
+    page_icon="📍",
     layout="wide"
 )
 
-st.title("📍 영천 국가유산 좌표 보완")
-
-
-# ==========================================================
-# 2. 카카오 REST API KEY
-# ==========================================================
-
-# .streamlit/secrets.toml
-#
-# KAKAO_API_KEY = "1020a7ea45a4af35228dbb6933477869"
-
-KAKAO_API_KEY = st.secrets.get(
-    "KAKAO_API_KEY",
-    ""
+st.title("📍 영천 국가유산 좌표 자동 보완")
+st.caption(
+    "1단계 국가유산명 검색 → "
+    "2단계 명칭·주소 재검색 → "
+    "3단계 다중 후보 자동 탐색"
 )
+
+
+# =========================================================
+# 1. Kakao API 설정
+# =========================================================
+
+KAKAO_API_KEY = st.secrets.get("KAKAO_API_KEY", "")
 
 HEADERS = {
     "Authorization": f"KakaoAK {KAKAO_API_KEY}"
 }
 
+KAKAO_KEYWORD_URL = (
+    "https://dapi.kakao.com/v2/local/search/keyword.json"
+)
 
-# ==========================================================
-# 3. 데이터 파일
-# ==========================================================
+KAKAO_ADDRESS_URL = (
+    "https://dapi.kakao.com/v2/local/search/address.json"
+)
+
+
+# =========================================================
+# 2. CSV 파일 경로
+# =========================================================
 
 FILE_PATH = "pages/영천_국가유산_상세.csv"
 
 if not os.path.exists(FILE_PATH):
-
     FILE_PATH = "영천_국가유산_상세.csv"
 
 
-# ==========================================================
-# 4. 수동 좌표
-# ==========================================================
-#
-# 3단계 수동 검증에서 최종적으로 확인된 좌표를
-# 여기에 추가할 수 있음
-#
-# 형식:
-#
-# "문화재명": (위도, 경도)
-#
-# ==========================================================
-
-MANUAL_COORDS = {
-
-    # 예시
-    # "임고서원 은행나무": (
-    #     35.9907,
-    #     128.9475
-    # ),
-
-}
-
-
-# ==========================================================
-# 5. 좌표 유효성 검사
-# ==========================================================
+# =========================================================
+# 3. 좌표 유효성 검사
+# =========================================================
 
 def valid_coordinate(lat, lon):
 
-    if pd.isna(lat) or pd.isna(lon):
-        return False
-
     try:
-
         lat = float(lat)
         lon = float(lon)
 
+        if 33 <= lat <= 39 and 124 <= lon <= 132:
+            return True
+
     except:
+        pass
 
-        return False
-
-    # 대한민국 범위
-    return (
-        33 <= lat <= 39
-        and
-        124 <= lon <= 132
-    )
+    return False
 
 
-# ==========================================================
-# 6. 카카오 API 공통 요청
-# ==========================================================
+# =========================================================
+# 4. 텍스트 정리
+# =========================================================
 
-def kakao_request(endpoint, query):
+def normalize_text(text):
 
-    if not KAKAO_API_KEY:
-        return []
+    if pd.isna(text):
+        return ""
+
+    text = str(text)
+
+    text = re.sub(r"\([^)]*\)", "", text)
+
+    text = re.sub(r"[,·ㆍ]", " ", text)
+
+    text = re.sub(r"\s+", " ", text)
+
+    return text.strip()
+
+
+# =========================================================
+# 5. 국가유산명 정제
+# =========================================================
+
+def refine_name(name):
+
+    name = normalize_text(name)
+
+    if not name:
+        return ""
+
+    remove_words = [
+        "탱화",
+        "유물",
+        "일괄",
+        "및",
+        "구 "
+    ]
+
+    refined = name
+
+    for word in remove_words:
+        refined = refined.replace(word, " ")
+
+    refined = re.sub(r"\s+", " ", refined)
+
+    return refined.strip()
+
+
+# =========================================================
+# 6. 주소 정리
+# =========================================================
+
+def clean_address(address):
+
+    address = normalize_text(address)
+
+    if not address:
+        return ""
+
+    remove_words = [
+        "외",
+        "일원",
+        "필지",
+        "번지"
+    ]
+
+    for word in remove_words:
+        address = address.replace(word, " ")
+
+    address = re.sub(r"\s+", " ", address)
+
+    return address.strip()
+
+
+# =========================================================
+# 7. Kakao 키워드 검색
+# =========================================================
+
+def kakao_keyword_search(query):
 
     if not query:
         return []
 
-    url = (
-        "https://dapi.kakao.com/"
-        f"v2/local/search/{endpoint}.json"
-    )
-
     try:
 
         response = requests.get(
-            url,
+            KAKAO_KEYWORD_URL,
             headers=HEADERS,
             params={
                 "query": query,
@@ -129,387 +172,735 @@ def kakao_request(endpoint, query):
         if response.status_code != 200:
             return []
 
-        data = response.json()
-
-        return data.get(
+        return response.json().get(
             "documents",
             []
         )
 
-    except Exception:
+    except:
 
         return []
 
 
-# ==========================================================
-# 7. 카카오 키워드 검색
-# ==========================================================
-#
-# [1단계]
-# 국가유산명 그대로 검색
-#
-# ==========================================================
+# =========================================================
+# 8. Kakao 주소 검색
+# =========================================================
 
-def search_by_name(name):
+def kakao_address_search(query):
 
-    documents = kakao_request(
-        "keyword",
-        name
-    )
-
-    if not documents:
-        return None, None
-
-
-    # ------------------------------------------------------
-    # 영천 지역 결과 우선
-    # ------------------------------------------------------
-
-    for doc in documents:
-
-        address_name = str(
-            doc.get(
-                "address_name",
-                ""
-            )
-        )
-
-        road_address = str(
-            doc.get(
-                "road_address_name",
-                ""
-            )
-        )
-
-        combined = (
-            address_name
-            + " "
-            + road_address
-        )
-
-        if "영천" in combined:
-
-            try:
-
-                lon = float(
-                    doc["x"]
-                )
-
-                lat = float(
-                    doc["y"]
-                )
-
-                if valid_coordinate(
-                    lat,
-                    lon
-                ):
-
-                    return lat, lon
-
-            except:
-
-                continue
-
-
-    # ------------------------------------------------------
-    # 영천 결과가 없으면 첫 결과
-    # ------------------------------------------------------
+    if not query:
+        return []
 
     try:
 
-        doc = documents[0]
-
-        lon = float(
-            doc["x"]
+        response = requests.get(
+            KAKAO_ADDRESS_URL,
+            headers=HEADERS,
+            params={
+                "query": query,
+                "size": 15
+            },
+            timeout=10
         )
 
-        lat = float(
-            doc["y"]
+        if response.status_code != 200:
+            return []
+
+        return response.json().get(
+            "documents",
+            []
         )
-
-        if valid_coordinate(
-            lat,
-            lon
-        ):
-
-            return lat, lon
 
     except:
 
-        pass
+        return []
 
 
-    return None, None
+# =========================================================
+# 9. 검색 결과에서 좌표 후보 추출
+# =========================================================
+
+def document_to_candidate(doc):
+
+    try:
+
+        lat = float(doc.get("y"))
+        lon = float(doc.get("x"))
+
+    except:
+
+        return None
+
+    if not valid_coordinate(lat, lon):
+        return None
+
+    return {
+        "lat": lat,
+        "lon": lon,
+        "place_name": doc.get(
+            "place_name",
+            ""
+        ),
+        "address_name": doc.get(
+            "address_name",
+            ""
+        ),
+        "road_address_name": doc.get(
+            "road_address_name",
+            ""
+        ),
+        "category_name": doc.get(
+            "category_name",
+            ""
+        )
+    }
 
 
-# ==========================================================
-# 8. 명칭 정제
-# ==========================================================
-#
-# [2단계]
-# 카카오에서 검색이 안 될 경우
-# 문화재명을 검색하기 쉬운 형태로 정제
-#
-# ==========================================================
+# =========================================================
+# 10. 문자열 유사도
+# =========================================================
 
-def refine_name(name):
+def text_similarity(target, candidate):
 
-    if pd.isna(name):
-        return ""
+    target = normalize_text(
+        target
+    ).lower()
 
-    name = str(name).strip()
+    candidate = normalize_text(
+        candidate
+    ).lower()
+
+    if not target or not candidate:
+        return 0
+
+    if target == candidate:
+        return 100
+
+    if target in candidate:
+        return 80
+
+    if candidate in target:
+        return 70
+
+    target_words = set(
+        target.split()
+    )
+
+    candidate_words = set(
+        candidate.split()
+    )
+
+    if not target_words:
+        return 0
+
+    overlap = len(
+        target_words & candidate_words
+    )
+
+    return min(
+        60,
+        int(
+            overlap
+            / len(target_words)
+            * 60
+        )
+    )
 
 
-    remove_words = [
+# =========================================================
+# 11. 후보 점수 계산
+# =========================================================
 
-        "탱화",
-        "유물",
-        "일괄",
-        "및",
-        "구 "
+def calculate_score(
+    heritage_name,
+    heritage_address,
+    candidate
+):
+
+    score = 0
+
+    refined_name = refine_name(
+        heritage_name
+    )
+
+    address = clean_address(
+        heritage_address
+    )
+
+    place_name = candidate[
+        "place_name"
     ]
 
+    address_name = candidate[
+        "address_name"
+    ]
 
-    for word in remove_words:
+    road_address = candidate[
+        "road_address_name"
+    ]
 
-        name = name.replace(
-            word,
-            ""
+    category_name = candidate[
+        "category_name"
+    ]
+
+    # 영천 포함 여부
+    all_text = (
+        place_name
+        + " "
+        + address_name
+        + " "
+        + road_address
+        + " "
+        + category_name
+    )
+
+    if "영천" in all_text:
+        score += 40
+
+    # 국가유산명과 장소명 비교
+    name_score = text_similarity(
+        refined_name,
+        place_name
+    )
+
+    score += int(
+        name_score * 0.35
+    )
+
+    # 주소 비교
+    address_score = text_similarity(
+        address,
+        address_name
+    )
+
+    score += int(
+        address_score * 0.20
+    )
+
+    # 도로명 주소 비교
+    road_score = text_similarity(
+        address,
+        road_address
+    )
+
+    score += int(
+        road_score * 0.15
+    )
+
+    # 핵심 단어가 검색 결과에 있는지 확인
+    if refined_name:
+
+        name_words = [
+            word
+            for word in refined_name.split()
+            if len(word) >= 2
+        ]
+
+        for word in name_words:
+
+            if word in all_text:
+                score += 5
+
+    return score
+
+
+# =========================================================
+# 12. 가장 높은 점수의 후보 선택
+# =========================================================
+
+def choose_best_candidate(
+    heritage_name,
+    heritage_address,
+    candidates
+):
+
+    if not candidates:
+        return None
+
+    scored = []
+
+    for candidate in candidates:
+
+        score = calculate_score(
+            heritage_name,
+            heritage_address,
+            candidate
         )
 
+        candidate_copy = candidate.copy()
 
-    return " ".join(
-        name.split()
-    ).strip()
+        candidate_copy["score"] = score
 
+        scored.append(
+            candidate_copy
+        )
 
-# ==========================================================
-# 9. 주소 정제
-# ==========================================================
-#
-# [2단계]
-# 지번 / 도로명 주소 기반 검색을 위한 주소 정제
-#
-# ==========================================================
+    scored.sort(
+        key=lambda x: x["score"],
+        reverse=True
+    )
 
-def clean_address(address):
-
-    if pd.isna(address):
-        return ""
-
-    address = str(address).strip()
+    return scored[0]
 
 
-    # 괄호 제거
-    address = re.sub(
-        r"\(.*?\)",
+# =========================================================
+# 13. 1단계
+# 국가유산명 그대로 검색
+# =========================================================
+
+def stage1_search(name):
+
+    if not name:
+        return None
+
+    docs = kakao_keyword_search(
+        name
+    )
+
+    candidates = []
+
+    for doc in docs:
+
+        candidate = document_to_candidate(
+            doc
+        )
+
+        if candidate:
+            candidates.append(
+                candidate
+            )
+
+    if not candidates:
+        return None
+
+    # 영천 결과 우선
+    yeongcheon_candidates = [
+        c
+        for c in candidates
+        if "영천" in (
+            c["place_name"]
+            + c["address_name"]
+            + c["road_address_name"]
+        )
+    ]
+
+    if yeongcheon_candidates:
+        candidates = (
+            yeongcheon_candidates
+        )
+
+    best = choose_best_candidate(
+        name,
         "",
+        candidates
+    )
+
+    if best:
+
+        return {
+            "lat": best["lat"],
+            "lon": best["lon"],
+            "method": (
+                "1단계 - 국가유산명 검색"
+            ),
+            "score": best["score"],
+            "place_name": best[
+                "place_name"
+            ]
+        }
+
+    return None
+
+
+# =========================================================
+# 14. 2단계
+# 명칭 정제 + 주소 검색
+# =========================================================
+
+def stage2_search(
+    name,
+    address
+):
+
+    refined_name = refine_name(
+        name
+    )
+
+    cleaned_address = clean_address(
         address
     )
 
+    candidates = []
 
-    # 검색 방해 단어 제거
-    for word in [
+    # -----------------------------------------
+    # 정제된 국가유산명
+    # -----------------------------------------
 
-        "외",
-        "일원",
-        "필지",
-        "번지"
+    if refined_name:
 
-    ]:
-
-        address = address.replace(
-            word,
-            ""
+        docs = kakao_keyword_search(
+            refined_name
         )
 
+        for doc in docs:
 
-    return " ".join(
-        address.split()
-    ).strip()
+            candidate = document_to_candidate(
+                doc
+            )
+
+            if candidate:
+                candidates.append(
+                    candidate
+                )
+
+    # -----------------------------------------
+    # 영천 + 정제된 이름
+    # -----------------------------------------
+
+    if refined_name:
+
+        docs = kakao_keyword_search(
+            f"영천 {refined_name}"
+        )
+
+        for doc in docs:
+
+            candidate = document_to_candidate(
+                doc
+            )
+
+            if candidate:
+                candidates.append(
+                    candidate
+                )
+
+    # -----------------------------------------
+    # 주소 검색
+    # -----------------------------------------
+
+    if cleaned_address:
+
+        docs = kakao_address_search(
+            cleaned_address
+        )
+
+        for doc in docs:
+
+            candidate = document_to_candidate(
+                doc
+            )
+
+            if candidate:
+                candidates.append(
+                    candidate
+                )
+
+    # 중복 제거
+    unique = {}
+
+    for candidate in candidates:
+
+        key = (
+            round(
+                candidate["lat"],
+                6
+            ),
+            round(
+                candidate["lon"],
+                6
+            )
+        )
+
+        unique[key] = candidate
+
+    candidates = list(
+        unique.values()
+    )
+
+    if not candidates:
+        return None
+
+    best = choose_best_candidate(
+        name,
+        address,
+        candidates
+    )
+
+    if best:
+
+        return {
+            "lat": best["lat"],
+            "lon": best["lon"],
+            "method": (
+                "2단계 - 명칭 정제 + 주소 검색"
+            ),
+            "score": best["score"],
+            "place_name": best[
+                "place_name"
+            ]
+        }
+
+    return None
 
 
-# ==========================================================
-# 10. 카카오 주소 검색
-# ==========================================================
-#
-# [2단계]
-# 지번 / 도로명 주소를 이용한 검색
-#
-# ==========================================================
+# =========================================================
+# 15. 3단계
+# 다중 검색 자동 보완
+# =========================================================
 
-def search_by_address(address):
+def stage3_search(
+    name,
+    address
+):
 
-    documents = kakao_request(
-        "address",
+    refined_name = refine_name(
+        name
+    )
+
+    cleaned_address = clean_address(
         address
     )
 
-    if not documents:
-        return None, None
+    candidates = []
 
+    # -----------------------------------------
+    # 여러 검색어 자동 생성
+    # -----------------------------------------
 
-    for doc in documents:
+    queries = []
 
-        try:
+    if name:
+        queries.append(name)
 
-            lon = float(
-                doc["x"]
+    if refined_name:
+
+        queries.append(
+            refined_name
+        )
+
+        queries.append(
+            f"영천 {refined_name}"
+        )
+
+    if cleaned_address:
+
+        queries.append(
+            cleaned_address
+        )
+
+        queries.append(
+            f"영천 {cleaned_address}"
+        )
+
+    # -----------------------------------------
+    # 핵심 단어 추출
+    # -----------------------------------------
+
+    if refined_name:
+
+        words = [
+            word
+            for word in refined_name.split()
+            if len(word) >= 2
+        ]
+
+        if len(words) >= 2:
+
+            queries.append(
+                " ".join(words[:2])
             )
 
-            lat = float(
-                doc["y"]
+            queries.append(
+                f"영천 {' '.join(words[:2])}"
             )
 
-            if valid_coordinate(
-                lat,
-                lon
-            ):
+        if words:
 
-                return lat, lon
+            queries.append(
+                words[0]
+            )
 
-        except:
+            queries.append(
+                f"영천 {words[0]}"
+            )
 
-            continue
+    # 중복 검색어 제거
+    queries = list(
+        dict.fromkeys(
+            [
+                q.strip()
+                for q in queries
+                if q and q.strip()
+            ]
+        )
+    )
+
+    # -----------------------------------------
+    # 모든 검색어 검색
+    # -----------------------------------------
+
+    for query in queries:
+
+        docs = kakao_keyword_search(
+            query
+        )
+
+        for doc in docs:
+
+            candidate = document_to_candidate(
+                doc
+            )
+
+            if candidate:
+                candidates.append(
+                    candidate
+                )
+
+        time.sleep(0.15)
+
+    # -----------------------------------------
+    # 주소 API 추가 검색
+    # -----------------------------------------
+
+    if cleaned_address:
+
+        docs = kakao_address_search(
+            cleaned_address
+        )
+
+        for doc in docs:
+
+            candidate = document_to_candidate(
+                doc
+            )
+
+            if candidate:
+                candidates.append(
+                    candidate
+                )
+
+    # -----------------------------------------
+    # 좌표 중복 제거
+    # -----------------------------------------
+
+    unique = {}
+
+    for candidate in candidates:
+
+        key = (
+            round(
+                candidate["lat"],
+                6
+            ),
+            round(
+                candidate["lon"],
+                6
+            )
+        )
+
+        unique[key] = candidate
+
+    candidates = list(
+        unique.values()
+    )
+
+    if not candidates:
+        return None
+
+    # -----------------------------------------
+    # 점수 계산
+    # -----------------------------------------
+
+    scored = []
+
+    for candidate in candidates:
+
+        score = calculate_score(
+            name,
+            address,
+            candidate
+        )
+
+        candidate_copy = candidate.copy()
+
+        candidate_copy["score"] = score
+
+        scored.append(
+            candidate_copy
+        )
+
+    scored.sort(
+        key=lambda x: x["score"],
+        reverse=True
+    )
+
+    best = scored[0]
+
+    # 40점 이상만 자동 채택
+    if best["score"] < 40:
+        return None
+
+    return {
+        "lat": best["lat"],
+        "lon": best["lon"],
+        "method": (
+            "3단계 - 다중 검색 자동 보완"
+        ),
+        "score": best["score"],
+        "place_name": best[
+            "place_name"
+        ]
+    }
 
 
-    return None, None
-
-
-# ==========================================================
-# 11. 문화재 하나의 좌표 검색
-# ==========================================================
-#
-# 프로젝트 계획
-#
-# 1단계
-# 국가유산명 기반 자동검색
-#
-# 2단계
-# 명칭 정제 + 주소 기반 재검색
-#
-# 3단계
-# 수동 좌표 보완
-#
-# ==========================================================
+# =========================================================
+# 16. 최종 좌표 찾기
+# =========================================================
 
 def find_coordinate(
     name,
     address
 ):
 
-
-    # ======================================================
     # 1단계
-    # 국가유산명 기반 검색
-    # ======================================================
-
-    lat, lon = search_by_name(
+    result = stage1_search(
         name
     )
 
-    if lat is not None:
+    if result:
+        return result
 
-        return (
-            lat,
-            lon,
-            "1단계 - 국가유산명 검색"
-        )
-
-
-    # ======================================================
     # 2단계
-    # 명칭 정제 후 검색
-    # ======================================================
-
-    refined_name = refine_name(
-        name
-    )
-
-
-    if (
-        refined_name
-        and
-        refined_name != name
-    ):
-
-        lat, lon = search_by_name(
-            refined_name
-        )
-
-        if lat is not None:
-
-            return (
-                lat,
-                lon,
-                "2단계 - 명칭 정제 검색"
-            )
-
-
-    # ======================================================
-    # 2단계
-    # 영천 + 정제명 검색
-    # ======================================================
-
-    if refined_name:
-
-        lat, lon = search_by_name(
-            f"영천 {refined_name}"
-        )
-
-        if lat is not None:
-
-            return (
-                lat,
-                lon,
-                "2단계 - 영천 + 정제명 검색"
-            )
-
-
-    # ======================================================
-    # 2단계
-    # 지번 / 도로명 주소 검색
-    # ======================================================
-
-    cleaned_address = clean_address(
+    result = stage2_search(
+        name,
         address
     )
 
+    if result:
+        return result
 
-    if cleaned_address:
-
-        lat, lon = search_by_address(
-            cleaned_address
-        )
-
-        if lat is not None:
-
-            return (
-                lat,
-                lon,
-                "2단계 - 지번/도로명 주소 검색"
-            )
-
-
-    # ======================================================
     # 3단계
-    # 자동 검색 실패
-    #
-    # 여기서는 좌표를 억지로 만들지 않음
-    #
-    # → 수동 검증 대상으로 넘김
-    # ======================================================
-
-    return (
-        None,
-        None,
-        "3단계 - 수동 좌표 보완 필요"
+    result = stage3_search(
+        name,
+        address
     )
 
+    if result:
+        return result
 
-# ==========================================================
-# 12. 데이터 불러오기
-# ==========================================================
+    # 최종 실패
+    return {
+        "lat": None,
+        "lon": None,
+        "method": "수동 검증 필요",
+        "score": 0,
+        "place_name": ""
+    }
+
+
+# =========================================================
+# 17. CSV 불러오기
+# =========================================================
 
 @st.cache_data
 def load_data():
@@ -518,40 +909,45 @@ def load_data():
         FILE_PATH
     ):
 
-        return None
+        st.error(
+            f"CSV 파일을 찾을 수 없습니다: "
+            f"{FILE_PATH}"
+        )
 
+        return pd.DataFrame()
 
     df = pd.read_csv(
         FILE_PATH,
         encoding="utf-8-sig"
     )
 
-
-    # ------------------------------------------------------
-    # 필요한 컬럼 확인
-    # ------------------------------------------------------
-
+    # 필수 컬럼
     if "문화재명(국문)" not in df.columns:
 
-        return None
+        st.error(
+            "'문화재명(국문)' 컬럼이 없습니다."
+        )
 
+        return pd.DataFrame()
 
     if "소재지상세" not in df.columns:
-
         df["소재지상세"] = ""
 
-
     if "위도" not in df.columns:
-
         df["위도"] = None
 
-
     if "경도" not in df.columns:
-
         df["경도"] = None
 
+    if "좌표보정방법" not in df.columns:
+        df["좌표보정방법"] = ""
 
-    # 숫자형 변환
+    if "3단계신뢰도" not in df.columns:
+        df["3단계신뢰도"] = None
+
+    if "검색결과명" not in df.columns:
+        df["검색결과명"] = ""
+
     df["위도"] = pd.to_numeric(
         df["위도"],
         errors="coerce"
@@ -562,368 +958,378 @@ def load_data():
         errors="coerce"
     )
 
-
-    if "좌표보정방법" not in df.columns:
-
-        df["좌표보정방법"] = ""
-
-
     return df
 
 
-# ==========================================================
-# 13. 1~2단계 자동 좌표 보완
-# ==========================================================
+# =========================================================
+# 18. 1~3단계 자동 좌표 보완
+# =========================================================
 
 def auto_fix_coordinates(df):
 
     df = df.copy()
 
-
-    # 좌표가 없는 데이터만 대상
-    missing_indices = []
-
-
-    for i in df.index:
-
-        if not valid_coordinate(
-            df.at[i, "위도"],
-            df.at[i, "경도"]
-        ):
-
-            missing_indices.append(i)
-
-
-    total = len(
-        missing_indices
-    )
-
-
-    if total == 0:
-
-        return df
-
+    total = len(df)
 
     progress = st.progress(0)
 
     status = st.empty()
 
+    success_count = 0
 
-    success = 0
-    fail = 0
+    for i, row in df.iterrows():
 
-
-    for number, i in enumerate(
-        missing_indices,
-        start=1
-    ):
-
-
-        name = str(
-            df.at[i, "문화재명(국문)"]
-        ).strip()
-
-
-        address = str(
-            df.at[i, "소재지상세"]
-        ).strip()
-
-
-        status.write(
-            f"🔍 자동 좌표 검색 "
-            f"{number}/{total} : {name}"
+        name = row.get(
+            "문화재명(국문)",
+            ""
         )
 
+        address = row.get(
+            "소재지상세",
+            ""
+        )
 
-        lat, lon, method = find_coordinate(
+        # 이미 좌표가 있으면 건너뜀
+        if valid_coordinate(
+            row.get("위도"),
+            row.get("경도")
+        ):
+
+            if not row.get(
+                "좌표보정방법"
+            ):
+
+                df.at[
+                    i,
+                    "좌표보정방법"
+                ] = "기존 좌표 유지"
+
+            continue
+
+        status.write(
+            f"🔎 {i + 1}/{total} : {name}"
+        )
+
+        result = find_coordinate(
             name,
             address
         )
 
+        if result["lat"] is not None:
 
-        if lat is not None:
+            df.at[
+                i,
+                "위도"
+            ] = result["lat"]
 
-            df.at[i, "위도"] = lat
+            df.at[
+                i,
+                "경도"
+            ] = result["lon"]
 
-            df.at[i, "경도"] = lon
+            df.at[
+                i,
+                "좌표보정방법"
+            ] = result["method"]
 
-            df.at[i, "좌표보정방법"] = method
+            df.at[
+                i,
+                "3단계신뢰도"
+            ] = result["score"]
 
-            success += 1
+            df.at[
+                i,
+                "검색결과명"
+            ] = result["place_name"]
 
+            success_count += 1
 
         else:
 
-            df.at[i, "좌표보정방법"] = method
-
-            fail += 1
-
+            df.at[
+                i,
+                "좌표보정방법"
+            ] = "수동 검증 필요"
 
         progress.progress(
-            number / total
+            int(
+                ((i + 1) / total)
+                * 100
+            )
         )
 
-
-        # API 과부하 방지
         time.sleep(0.3)
 
-
-    status.empty()
-
-    progress.empty()
-
-
-    st.success(
-        f"자동 좌표 검색 완료 "
-        f"· 성공 {success}건 "
-        f"· 수동 보완 필요 {fail}건"
+    status.success(
+        f"자동 좌표 보완 완료: "
+        f"{success_count}건 처리"
     )
-
 
     return df
 
 
-# ==========================================================
-# 14. 데이터 로드
-# ==========================================================
+# =========================================================
+# 19. 데이터 불러오기
+# =========================================================
 
 df = load_data()
 
-
-if df is None:
-
-    st.error(
-        "❌ 국가유산 CSV 파일을 찾을 수 없습니다."
-    )
-
+if df.empty:
     st.stop()
 
 
-# ==========================================================
-# 15. 현재 좌표 현황
-# ==========================================================
-
-df["좌표확보"] = df.apply(
-    lambda row:
-        valid_coordinate(
-            row["위도"],
-            row["경도"]
-        ),
-    axis=1
-)
-
+# =========================================================
+# 20. 현재 좌표 상태
+# =========================================================
 
 total_count = len(df)
 
-coordinate_count = int(
-    df["좌표확보"].sum()
+coordinate_count = sum(
+    valid_coordinate(
+        lat,
+        lon
+    )
+    for lat, lon in zip(
+        df["위도"],
+        df["경도"]
+    )
 )
 
 missing_count = (
     total_count
-    -
-    coordinate_count
+    - coordinate_count
 )
 
 
-# ==========================================================
-# 16. 통계
-# ==========================================================
+# =========================================================
+# 21. 통계
+# =========================================================
 
 col1, col2, col3 = st.columns(3)
 
+col1.metric(
+    "전체 국가유산",
+    f"{total_count}건"
+)
 
-with col1:
+col2.metric(
+    "좌표 확보",
+    f"{coordinate_count}건"
+)
 
-    st.metric(
-        "전체 국가유산",
-        total_count
-    )
-
-
-with col2:
-
-    st.metric(
-        "좌표 확보",
-        coordinate_count
-    )
-
-
-with col3:
-
-    st.metric(
-        "좌표 미확인",
-        missing_count
-    )
-
+col3.metric(
+    "좌표 미확보",
+    f"{missing_count}건"
+)
 
 st.divider()
 
 
-# ==========================================================
-# 17. 1~2단계 자동검색 버튼
-# ==========================================================
-
-st.subheader(
-    "🔍 1~2단계 자동 좌표 검색"
-)
-
-st.caption(
-    "국가유산명 → 명칭 정제 → "
-    "지번/도로명 주소 순서로 검색합니다."
-)
-
+# =========================================================
+# 22. 자동 좌표 보완 버튼
+# =========================================================
 
 if st.button(
-    "🚀 1~2단계 자동 좌표 검색",
-    type="primary"
+    "🚀 1~3단계 자동 좌표 보완 시작",
+    type="primary",
+    use_container_width=True
 ):
 
-    df = auto_fix_coordinates(
-        df
-    )
+    if not KAKAO_API_KEY:
 
+        st.error(
+            "KAKAO_API_KEY가 설정되어 있지 않습니다."
+        )
+
+        st.stop()
+
+    with st.spinner(
+        "1~3단계 좌표 자동 검색 중입니다..."
+    ):
+
+        fixed_df = auto_fix_coordinates(
+            df
+        )
 
     st.session_state[
         "fixed_df"
-    ] = df
+    ] = fixed_df
+
+    st.cache_data.clear()
+
+    st.rerun()
 
 
-# ==========================================================
-# 18. 보완된 데이터 사용
-# ==========================================================
+# =========================================================
+# 23. 자동 처리 결과
+# =========================================================
 
-if (
-    "fixed_df"
-    in st.session_state
-):
+if "fixed_df" in st.session_state:
 
     df = st.session_state[
         "fixed_df"
     ]
 
 
-# ==========================================================
-# 19. 3단계 수동 보완 대상
-# ==========================================================
+# =========================================================
+# 24. 처리 결과 통계
+# =========================================================
 
-df["좌표확보"] = df.apply(
-    lambda row:
-        valid_coordinate(
-            row["위도"],
-            row["경도"]
-        ),
-    axis=1
+st.subheader(
+    "📊 좌표 보완 결과"
 )
 
-
-missing_data = df[
-    ~df["좌표확보"]
-].copy()
-
-
-# ==========================================================
-# 20. 3단계 수동 검증
-# ==========================================================
-
-if len(missing_data) > 0:
-
-    st.divider()
-
-    st.subheader(
-        "🛰️ 3단계 수동 좌표 보완"
-    )
-
-    st.info(
-        "자동 검색에 실패한 국가유산입니다. "
-        "위성지도 및 문헌자료를 대조하여 "
-        "좌표를 직접 확인한 후 입력합니다."
-    )
-
-
-    columns = [
-
-        "문화재명(국문)",
-
-        "소재지상세",
-
-        "위도",
-
-        "경도",
-
-        "좌표보정방법"
-
-    ]
-
-
-    columns = [
-        c
-        for c in columns
-        if c in missing_data.columns
-    ]
-
-
-    st.dataframe(
-        missing_data[columns],
-        use_container_width=True
-    )
-
-
-    st.warning(
-        f"⚠️ 수동 검증이 필요한 "
-        f"국가유산: {len(missing_data)}건"
-    )
-
-
-else:
-
-    st.success(
-        "🎉 모든 국가유산의 좌표가 확보되었습니다."
-    )
-
-
-# ==========================================================
-# 21. 지도용 데이터
-# ==========================================================
-
-df["latitude"] = pd.to_numeric(
-    df["위도"],
-    errors="coerce"
+method_counts = (
+    df["좌표보정방법"]
+    .fillna("")
+    .value_counts()
 )
 
-df["longitude"] = pd.to_numeric(
-    df["경도"],
-    errors="coerce"
-)
+for method, count in method_counts.items():
+
+    if method:
+
+        st.write(
+            f"**{method}** : {count}건"
+        )
 
 
-map_data = df[
-    df["latitude"].notna()
-    &
-    df["longitude"].notna()
-].copy()
-
-
-# ==========================================================
-# 22. 지도
-# ==========================================================
+# =========================================================
+# 25. 3단계 자동 보완 결과
+# =========================================================
 
 st.divider()
 
 st.subheader(
-    "🗺️ 영천 국가유산 위치"
+    "🤖 3단계 자동 좌표 보완 결과"
 )
 
+stage3_df = df[
+    df["좌표보정방법"]
+    == "3단계 - 다중 검색 자동 보완"
+].copy()
 
-if len(map_data) > 0:
+if not stage3_df.empty:
+
+    st.success(
+        f"3단계에서 자동으로 좌표를 확보한 "
+        f"{len(stage3_df)}건이 있습니다."
+    )
+
+    display_columns = [
+        "문화재명(국문)",
+        "소재지상세",
+        "위도",
+        "경도",
+        "3단계신뢰도",
+        "검색결과명"
+    ]
+
+    display_columns = [
+        col
+        for col in display_columns
+        if col in stage3_df.columns
+    ]
+
+    st.dataframe(
+        stage3_df[
+            display_columns
+        ],
+        use_container_width=True
+    )
+
+else:
+
+    st.info(
+        "3단계 자동 보완으로 새롭게 "
+        "확보된 좌표가 없습니다."
+    )
+
+
+# =========================================================
+# 26. 최종 수동 검증 대상
+# =========================================================
+
+st.divider()
+
+st.subheader(
+    "⚠️ 최종 수동 검증이 필요한 국가유산"
+)
+
+manual_df = df[
+    df["좌표보정방법"]
+    == "수동 검증 필요"
+].copy()
+
+if not manual_df.empty:
+
+    st.warning(
+        f"자동 검색으로 좌표를 확정하지 못한 "
+        f"{len(manual_df)}건입니다."
+    )
+
+    display_columns = [
+        "문화재명(국문)",
+        "소재지상세",
+        "위도",
+        "경도",
+        "좌표보정방법"
+    ]
+
+    display_columns = [
+        col
+        for col in display_columns
+        if col in manual_df.columns
+    ]
+
+    st.dataframe(
+        manual_df[
+            display_columns
+        ],
+        use_container_width=True
+    )
+
+else:
+
+    st.success(
+        "🎉 모든 국가유산의 좌표가 "
+        "자동으로 확보되었습니다!"
+    )
+
+
+# =========================================================
+# 27. 지도
+# =========================================================
+
+st.divider()
+
+st.subheader(
+    "🗺️ 좌표 확보 국가유산 지도"
+)
+
+map_df = df[
+    df.apply(
+        lambda row: valid_coordinate(
+            row["위도"],
+            row["경도"]
+        ),
+        axis=1
+    )
+].copy()
+
+if not map_df.empty:
+
+    map_data = map_df[
+        ["위도", "경도"]
+    ].rename(
+        columns={
+            "위도": "latitude",
+            "경도": "longitude"
+        }
+    )
 
     st.map(
-        map_data[
-            [
-                "latitude",
-                "longitude"
-            ]
-        ]
+        map_data
     )
 
 else:
@@ -933,18 +1339,45 @@ else:
     )
 
 
-# ==========================================================
-# 23. 전체 국가유산 목록
-# ==========================================================
+# =========================================================
+# 28. 최종 데이터
+# =========================================================
 
 st.divider()
 
 st.subheader(
-    "📋 전체 국가유산 목록"
+    "📋 최종 데이터"
 )
-
 
 st.dataframe(
     df,
+    use_container_width=True,
+    height=500
+)
+
+
+# =========================================================
+# 29. CSV 다운로드
+# =========================================================
+
+st.divider()
+
+st.subheader(
+    "💾 최종 좌표 데이터 저장"
+)
+
+csv_data = df.to_csv(
+    index=False,
+    encoding="utf-8-sig"
+)
+
+st.download_button(
+    label="⬇️ 최종 좌표 CSV 다운로드",
+    data=csv_data,
+    file_name=(
+        "영천_국가유산_좌표보완_최종.csv"
+    ),
+    mime="text/csv",
     use_container_width=True
 )
+```
