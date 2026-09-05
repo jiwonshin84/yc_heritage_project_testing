@@ -28,17 +28,8 @@ st.caption(
 # 1. Kakao API 설정
 # =========================================================
 
-# Kakao API 키 불러오기
-KAKAO_API_KEY = ""
+KAKAO_API_KEY = st.secrets.get("KAKAO_API_KEY", "")
 
-try:
-    with open("secrets.toml", "r", encoding="utf-8") as f:
-        for line in f:
-            if line.strip().startswith("KAKAO_API_KEY"):
-                KAKAO_API_KEY = line.split("=", 1)[1].strip().strip('"').strip("'")
-                break
-except Exception:
-    pass
 HEADERS = {
     "Authorization": f"KakaoAK {KAKAO_API_KEY}"
 }
@@ -160,71 +151,49 @@ def clean_address(address):
 # 7. Kakao 키워드 검색
 # =========================================================
 
-def kakao_keyword_search(query):
+API_ERRORS = []
 
+def kakao_keyword_search(query):
     if not query:
         return []
-
     try:
-
         response = requests.get(
             KAKAO_KEYWORD_URL,
             headers=HEADERS,
-            params={
-                "query": query,
-                "size": 15
-            },
+            params={"query": query, "size": 15},
             timeout=10
         )
-
         if response.status_code != 200:
+            API_ERRORS.append({"type": "키워드", "query": query, "status": response.status_code, "message": response.text[:300]})
             return []
-
-        return response.json().get(
-            "documents",
-            []
-        )
-
-    except:
-
+        return response.json().get("documents", [])
+    except Exception as e:
+        API_ERRORS.append({"type": "키워드", "query": query, "status": "예외", "message": str(e)[:300]})
         return []
 
 
-# =========================================================
 # 8. Kakao 주소 검색
 # =========================================================
 
 def kakao_address_search(query):
-
     if not query:
         return []
-
     try:
-
         response = requests.get(
             KAKAO_ADDRESS_URL,
             headers=HEADERS,
-            params={
-                "query": query,
-                "size": 15
-            },
+            params={"query": query, "size": 15},
             timeout=10
         )
-
         if response.status_code != 200:
+            API_ERRORS.append({"type": "주소", "query": query, "status": response.status_code, "message": response.text[:300]})
             return []
-
-        return response.json().get(
-            "documents",
-            []
-        )
-
-    except:
-
+        return response.json().get("documents", [])
+    except Exception as e:
+        API_ERRORS.append({"type": "주소", "query": query, "status": "예외", "message": str(e)[:300]})
         return []
 
 
-# =========================================================
 # 9. 검색 결과에서 좌표 후보 추출
 # =========================================================
 
@@ -525,133 +494,70 @@ def stage1_search(name):
 # 명칭 정제 + 주소 검색
 # =========================================================
 
-def stage2_search(
-    name,
-    address
-):
-
-    refined_name = refine_name(
-        name
-    )
-
-    cleaned_address = clean_address(
-        address
-    )
-
+def stage2_search(name, address):
+    refined_name = refine_name(name)
+    cleaned_address = clean_address(address)
     candidates = []
 
-    # -----------------------------------------
-    # 정제된 국가유산명
-    # -----------------------------------------
-
-    if refined_name:
-
-        docs = kakao_keyword_search(
-            refined_name
-        )
-
-        for doc in docs:
-
-            candidate = document_to_candidate(
-                doc
-            )
-
-            if candidate:
-                candidates.append(
-                    candidate
-                )
-
-    # -----------------------------------------
-    # 영천 + 정제된 이름
-    # -----------------------------------------
-
-    if refined_name:
-
-        docs = kakao_keyword_search(
-            f"영천 {refined_name}"
-        )
-
-        for doc in docs:
-
-            candidate = document_to_candidate(
-                doc
-            )
-
-            if candidate:
-                candidates.append(
-                    candidate
-                )
-
-    # -----------------------------------------
-    # 주소 검색
-    # -----------------------------------------
-
+    # 주소를 먼저 검색
     if cleaned_address:
+        queries = [
+            cleaned_address,
+            re.sub(r"\s+", " ", cleaned_address.replace("경상북도", "").strip())
+        ]
+        for query in dict.fromkeys(q for q in queries if q):
+            docs = kakao_address_search(query)
+            for doc in docs:
+                candidate = document_to_candidate(doc)
+                if candidate:
+                    candidates.append(candidate)
+            time.sleep(0.1)
 
-        docs = kakao_address_search(
-            cleaned_address
-        )
+    # 정제된 이름 검색
+    if refined_name:
+        for query in dict.fromkeys([refined_name, f"영천 {refined_name}"]):
+            docs = kakao_keyword_search(query)
+            for doc in docs:
+                candidate = document_to_candidate(doc)
+                if candidate:
+                    candidates.append(candidate)
+            time.sleep(0.1)
 
-        for doc in docs:
-
-            candidate = document_to_candidate(
-                doc
-            )
-
-            if candidate:
-                candidates.append(
-                    candidate
-                )
-
-    # 중복 제거
     unique = {}
-
     for candidate in candidates:
+        key = (round(candidate["lat"], 6), round(candidate["lon"], 6))
+        if key not in unique:
+            unique[key] = candidate
 
-        key = (
-            round(
-                candidate["lat"],
-                6
-            ),
-            round(
-                candidate["lon"],
-                6
-            )
-        )
-
-        unique[key] = candidate
-
-    candidates = list(
-        unique.values()
-    )
-
+    candidates = list(unique.values())
     if not candidates:
         return None
 
-    best = choose_best_candidate(
-        name,
-        address,
-        candidates
+    best = choose_best_candidate(name, address, candidates)
+    if not best:
+        return None
+
+    all_text = normalize_text(
+        best["place_name"] + " " + best["address_name"] + " " + best["road_address_name"]
     )
+    address_match = max(
+        text_similarity(cleaned_address, best["address_name"]),
+        text_similarity(cleaned_address, best["road_address_name"])
+    ) if cleaned_address else 0
+    name_match = text_similarity(refined_name, best["place_name"]) if refined_name else 0
 
-    if best:
-
+    if ("영천" in all_text and address_match >= 35) or name_match >= 70 or best["score"] >= 45:
         return {
             "lat": best["lat"],
             "lon": best["lon"],
-            "method": (
-                "2단계 - 명칭 정제 + 주소 검색"
-            ),
+            "method": "2단계 - 명칭 정제 + 주소 검색",
             "score": best["score"],
-            "place_name": best[
-                "place_name"
-            ]
+            "place_name": best["place_name"]
         }
 
     return None
 
 
-# =========================================================
 # 15. 3단계
 # 다중 검색 자동 보완
 # =========================================================
@@ -907,6 +813,20 @@ def find_coordinate(
 
 
 # =========================================================
+# 16-1. Kakao API 연결 테스트
+# =========================================================
+
+def test_kakao_api():
+    if not KAKAO_API_KEY:
+        return False, "KAKAO_API_KEY를 읽지 못했습니다."
+    API_ERRORS.clear()
+    docs = kakao_keyword_search("영천시청")
+    if API_ERRORS:
+        e = API_ERRORS[-1]
+        return False, f"Kakao API 오류 | 상태코드: {e['status']} | {e['message']}"
+    return True, f"Kakao API 연결 성공 (검색 결과 {len(docs)}건)"
+
+
 # 17. CSV 불러오기
 # =========================================================
 
@@ -1087,6 +1007,22 @@ if df.empty:
 
 
 # =========================================================
+# 19-1. API 연결 상태
+# =========================================================
+
+with st.expander("🔑 Kakao API 연결 상태 확인"):
+    if KAKAO_API_KEY:
+        st.success("KAKAO_API_KEY를 읽었습니다.")
+        if st.button("Kakao API 연결 테스트"):
+            ok, message = test_kakao_api()
+            if ok:
+                st.success(message)
+            else:
+                st.error(message)
+    else:
+        st.error("KAKAO_API_KEY를 읽지 못했습니다.")
+
+
 # 20. 현재 좌표 상태
 # =========================================================
 
@@ -1180,6 +1116,14 @@ if "fixed_df" in st.session_state:
 
 
 # =========================================================
+# 23-1. API 오류 확인
+# =========================================================
+
+if API_ERRORS:
+    with st.expander("⚠️ Kakao API 오류 상세"):
+        st.dataframe(pd.DataFrame(API_ERRORS), use_container_width=True)
+
+
 # 24. 처리 결과 통계
 # =========================================================
 
