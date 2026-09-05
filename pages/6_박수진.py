@@ -28,8 +28,57 @@ st.caption(
 # 1. Kakao API 설정
 # =========================================================
 
-KAKAO_API_KEY = st.secrets.get("KAKAO_API_KEY", "")
+from pathlib import Path
 
+KAKAO_API_KEY = ""
+
+# 1순위: Streamlit Secrets
+try:
+    KAKAO_API_KEY = st.secrets.get("KAKAO_API_KEY", "")
+except Exception:
+    pass
+
+
+# 2순위: 프로젝트 루트의 secrets.toml
+if not KAKAO_API_KEY:
+
+    try:
+        # 현재 파일:
+        # pages/6_박수진.py
+        #
+        # 따라서 parents[1] = 프로젝트 루트
+        project_root = Path(__file__).resolve().parents[1]
+
+        secrets_path = project_root / "secrets.toml"
+
+        if secrets_path.exists():
+
+            with open(
+                secrets_path,
+                "r",
+                encoding="utf-8"
+            ) as f:
+
+                for line in f:
+
+                    line = line.strip()
+
+                    if line.startswith("KAKAO_API_KEY"):
+
+                        KAKAO_API_KEY = (
+                            line.split("=", 1)[1]
+                            .strip()
+                            .strip('"')
+                            .strip("'")
+                        )
+
+                        break
+
+    except Exception:
+        KAKAO_API_KEY = ""
+
+
+# Kakao API 요청용 헤더
 HEADERS = {
     "Authorization": f"KakaoAK {KAKAO_API_KEY}"
 }
